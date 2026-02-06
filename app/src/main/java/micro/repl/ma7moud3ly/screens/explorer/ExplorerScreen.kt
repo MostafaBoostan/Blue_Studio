@@ -1,17 +1,31 @@
 package micro.repl.ma7moud3ly.screens.explorer
 
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -22,30 +36,19 @@ import micro.repl.ma7moud3ly.managers.TerminalManager
 import micro.repl.ma7moud3ly.model.EditorMode
 import micro.repl.ma7moud3ly.model.MicroFile
 import micro.repl.ma7moud3ly.model.MicroScript
-import micro.repl.ma7moud3ly.screens.dialogs.FileDeleteDialog
 import micro.repl.ma7moud3ly.screens.dialogs.FileCreateDialog
+import micro.repl.ma7moud3ly.screens.dialogs.FileDeleteDialog
 import micro.repl.ma7moud3ly.screens.dialogs.FileRenameDialog
 import micro.repl.ma7moud3ly.screens.dialogs.ImportScriptDialog
 import micro.repl.ma7moud3ly.ui.components.rememberMyDialogState
 import java.io.File
 
-private const val TAG = "FileManagerScreen"
+// رنگ ثابت برای برندینگ
+private val NeonGreen = Color(0xFF69F0AE)
 
-/**
- * Composable function that displays the Files Explorer screen.
- *
- * This screen allows users to browse and manage files on a remote device.
- * It provides functionalities such as opening folders, editing and running files,
- * refreshing the file list, navigating up the directory structure,
- * importing and exporting files, renaming and deleting files, and creating new files.
- *
- * @param viewModel The MainViewModel instance providing data for the screen.
- * @param terminalManager The TerminalManager instance for managing terminal sessions.
- * @param filesManager The FilesManager instance for interacting with the remote file system.
- * @param openTerminal A lambda function to open a terminal session with a given MicroScript.
- * @param openEditor A lambda function to open an editor with a given MicroScript.
- * @param onBack A lambda function to navigate back to the previous screen.
- */
+// اکستنشن اصلاح شده
+private val MicroFile.isDirectory: Boolean get() = !this.isFile
+
 @Composable
 fun FilesExplorerScreen(
     viewModel: MainViewModel,
@@ -60,83 +63,64 @@ fun FilesExplorerScreen(
     val coroutineScope = rememberCoroutineScope()
     val files = viewModel.files.collectAsState()
     var selectedFile by remember { mutableStateOf<MicroFile?>(null) }
+
+    // دریافت وضعیت تم
+    val isDarkMode by viewModel.isDarkMode.collectAsState()
+
+    // تعریف رنگ‌های داینامیک
+    val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val cardBg = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFFFFFFF)
+    val textColor = if (isDarkMode) Color(0xFFEEEEEE) else Color(0xFF121212)
+    val textGray = if (isDarkMode) Color(0xFFB0BEC5) else Color(0xFF757575)
+
     val importScriptDialog = rememberMyDialogState()
     val deleteFileDialog = rememberMyDialogState()
     val createFileDialog = rememberMyDialogState()
     val renameFileDialog = rememberMyDialogState()
+
     val isMicroPython = viewModel.microDevice?.isMicroPython == true
     val filesPicker = rememberFilesPickerResult()
 
-    // LaunchedEffect to terminate any running execution and list the directory contents
     LaunchedEffect(Unit) {
         terminalManager.terminateExecution()
         filesManager?.listDir(viewModel.root.value)
     }
 
-    /**
-     * Navigates up/back one level in the directory structure.
-     */
     fun onUp() {
         if (root.isEmpty() || root == "/") {
             onBack()
             return
         }
         val newRoot = File(root).parent ?: "/"
-        Log.i(TAG, "onUp from $root to $newRoot")
         viewModel.root.value = newRoot
         filesManager?.listDir(newRoot)
     }
 
     BackHandler { onUp() }
 
-    /**
-     * Runs the given file on the remote device.
-     *
-     * @param file The MicroFile to run.
-     */
     fun onRun(file: MicroFile) {
-        Log.i(TAG, "onRun - $file")
         filesManager?.read(file.fullPath, onRead = { content ->
-            Log.i(TAG, "onRun - $content")
             val script = MicroScript(
                 path = file.fullPath,
                 content = content,
                 editorMode = EditorMode.REMOTE
             )
-            coroutineScope.launch {
-                openTerminal(script)
-            }
+            coroutineScope.launch { openTerminal(script) }
         })
     }
 
-    /**
-     * Opens the given file in the editor.
-     *
-     * @param file The MicroFile to edit.
-     */
     fun onEdit(file: MicroFile) {
-        Log.i(TAG, "onEdit - $file")
         filesManager?.read(file.fullPath, onRead = { content ->
-            Log.i(TAG, "onEdit - $content")
             val script = MicroScript(
                 path = file.fullPath,
                 content = content,
                 editorMode = EditorMode.REMOTE
             )
-            coroutineScope.launch {
-                openEditor(script)
-            }
+            coroutineScope.launch { openEditor(script) }
         })
     }
 
-    /**
-     * Imports a file form phone to the remote device.
-     *
-     * @param fileName The name of the file to import.
-     * @param byteArray The content of the file as a byte array.
-     */
     fun importFile(fileName: String, byteArray: ByteArray) {
-        Log.v(TAG, "fileName - $fileName")
         filesManager?.writeBinary(
             path = "$root/$fileName",
             bytes = byteArray,
@@ -144,53 +128,35 @@ fun FilesExplorerScreen(
                 coroutineScope.launch {
                     filesManager.listDir()
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "saved to $root", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Saved to $root", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
         )
     }
 
-    /**
-     * Opens the given folder.
-     *
-     * @param file The MicroFile representing the folder to open.
-     */
     fun onOpenFolder(file: MicroFile) {
-        Log.i(TAG, "onOpenFolder - ${file.fullPath}")
         viewModel.root.value = file.fullPath
         filesManager?.listDir(file.fullPath)
     }
 
-    /**
-     * Refreshes the file list.
-     */
     fun onRefresh() {
-        Log.i(TAG, "onRefresh")
-        val msg = context.getText(R.string.explorer_refresh)
-        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getText(R.string.explorer_refresh), Toast.LENGTH_SHORT).show()
         filesManager?.listDir()
     }
 
     FileDeleteDialog(
         state = deleteFileDialog,
         name = { selectedFile?.name.orEmpty() },
-        onOk = {
-            Log.i(TAG, "onRemove - $selectedFile")
-            filesManager?.remove(selectedFile!!)
-        }
+        onOk = { filesManager?.remove(selectedFile!!) }
     )
 
     FileCreateDialog(
         state = createFileDialog,
         microFile = { selectedFile },
-        onOk = { file ->
-            Log.i(TAG, "onNew - $file")
-            filesManager?.new(file)
-        }
+        onOk = { file -> filesManager?.new(file) }
     )
 
-    //rename dialog
     FileRenameDialog(
         state = renameFileDialog,
         name = { selectedFile?.name.orEmpty() },
@@ -198,18 +164,12 @@ fun FilesExplorerScreen(
             val dst = MicroFile(
                 name = newName,
                 path = selectedFile!!.path,
-                type = if (selectedFile!!.isFile) MicroFile.FILE
-                else MicroFile.DIRECTORY
+                type = if (selectedFile!!.isFile) MicroFile.FILE else MicroFile.DIRECTORY
             )
-            Log.i(TAG, "onRename - from ${selectedFile!!.name} to ${dst.name}")
-            filesManager?.rename(
-                src = selectedFile!!,
-                dst = dst
-            )
+            filesManager?.rename(src = selectedFile!!, dst = dst)
         }
     )
 
-    // import file dialog
     ImportScriptDialog(
         state = importScriptDialog,
         onOk = { filesPicker.pickFile(::importFile) }
@@ -219,36 +179,329 @@ fun FilesExplorerScreen(
         files = { files.value },
         root = { root },
         isMicroPython = isMicroPython,
-        uiEvents = {
-            when (it) {
-                is ExplorerEvents.OpenFolder -> onOpenFolder(it.file)
-                is ExplorerEvents.Edit -> onEdit(it.file)
-                is ExplorerEvents.Run -> onRun(it.file)
+        bgColor = bgColor,
+        cardBg = cardBg,
+        textColor = textColor,
+        textGray = textGray,
+        uiEvents = { event ->
+            when (event) {
+                is ExplorerEvents.OpenFolder -> onOpenFolder(event.file)
+                is ExplorerEvents.Edit -> onEdit(event.file)
+                is ExplorerEvents.Run -> onRun(event.file)
                 is ExplorerEvents.Refresh -> onRefresh()
                 is ExplorerEvents.Up -> onUp()
-                is ExplorerEvents.Import -> {
-                    importScriptDialog.show()
-                }
-
-                is ExplorerEvents.Export -> {
-
-                }
-
+                is ExplorerEvents.Import -> importScriptDialog.show()
+                is ExplorerEvents.Export -> { }
                 is ExplorerEvents.Rename -> {
-                    selectedFile = it.file
+                    selectedFile = event.file
                     renameFileDialog.show()
                 }
-
                 is ExplorerEvents.Remove -> {
-                    selectedFile = it.file
+                    selectedFile = event.file
                     deleteFileDialog.show()
                 }
-
                 is ExplorerEvents.New -> {
-                    selectedFile = it.file
+                    selectedFile = event.file
                     createFileDialog.show()
                 }
             }
         }
     )
+}
+
+@Composable
+fun ExplorerScreenContent(
+    files: () -> List<MicroFile>,
+    root: () -> String,
+    isMicroPython: Boolean,
+    bgColor: Color,
+    cardBg: Color,
+    textColor: Color,
+    textGray: Color,
+    uiEvents: (ExplorerEvents) -> Unit
+) {
+    Scaffold(
+        containerColor = bgColor,
+        topBar = {
+            ExplorerTopBar(
+                currentPath = root(),
+                cardBg = cardBg,
+                textColor = textColor,
+                textGray = textGray,
+                onBack = { uiEvents(ExplorerEvents.Up) },
+                onRefresh = { uiEvents(ExplorerEvents.Refresh) }
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { uiEvents(ExplorerEvents.New(MicroFile(root(), "", MicroFile.FILE))) },
+                containerColor = NeonGreen,
+                contentColor = Color.Black
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "New File")
+            }
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            val fileList = files()
+
+            if (fileList.isEmpty()) {
+                EmptyStateView(cardBg, textGray)
+            } else {
+                LazyColumn(
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(fileList) { file ->
+                        FileItemView(
+                            file = file,
+                            isMicroPython = isMicroPython,
+                            cardBg = cardBg,
+                            textColor = textColor,
+                            textGray = textGray,
+                            onFolderClick = { uiEvents(ExplorerEvents.OpenFolder(it)) },
+                            onFileClick = { uiEvents(ExplorerEvents.Edit(it)) },
+                            onRun = { uiEvents(ExplorerEvents.Run(it)) },
+                            onRename = { uiEvents(ExplorerEvents.Rename(it)) },
+                            onDelete = { uiEvents(ExplorerEvents.Remove(it)) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ExplorerTopBar(
+    currentPath: String,
+    cardBg: Color,
+    textColor: Color,
+    textGray: Color,
+    onBack: () -> Unit,
+    onRefresh: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(cardBg)
+            .padding(top = 8.dp, bottom = 16.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = NeonGreen
+                )
+            }
+            Text(
+                text = "File Manager",
+                style = androidx.compose.ui.text.TextStyle(
+                    color = textColor,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            )
+            IconButton(onClick = onRefresh) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Refresh",
+                    tint = NeonGreen
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(if(textColor == Color.White) Color.Black.copy(alpha = 0.3f) else Color.LightGray.copy(alpha = 0.3f))
+                .border(1.dp, NeonGreen.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (currentPath == "/") Icons.Default.Home else Icons.Default.SdStorage,
+                contentDescription = null,
+                tint = textGray,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = currentPath.ifEmpty { "/" },
+                color = NeonGreen,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+fun FileItemView(
+    file: MicroFile,
+    isMicroPython: Boolean,
+    cardBg: Color,
+    textColor: Color,
+    textGray: Color,
+    onFolderClick: (MicroFile) -> Unit,
+    onFileClick: (MicroFile) -> Unit,
+    onRun: (MicroFile) -> Unit,
+    onRename: (MicroFile) -> Unit,
+    onDelete: (MicroFile) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    val icon = if (file.isDirectory) Icons.Default.Folder else Icons.Default.InsertDriveFile
+    val iconTint = if (file.isDirectory) Color(0xFFFFC107) else NeonGreen
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(cardBg)
+            .border(1.dp, textColor.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+            .clickable {
+                if (file.isDirectory) onFolderClick(file) else onFileClick(file)
+            }
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .clip(CircleShape)
+                .background(if(textColor == Color.White) Color.Black.copy(alpha = 0.3f) else Color.LightGray.copy(alpha = 0.3f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = file.name,
+                color = textColor,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 16.sp,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        if (file.isFile && (file.name.endsWith(".py") || file.name.endsWith(".txt")) && isMicroPython) {
+            IconButton(onClick = { onRun(file) }) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Run",
+                    tint = NeonGreen
+                )
+            }
+        }
+
+        Box {
+            IconButton(onClick = { expanded = true }) {
+                Icon(
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = "Menu",
+                    tint = textGray
+                )
+            }
+
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                offset = DpOffset((-10).dp, 0.dp),
+                modifier = Modifier.background(cardBg)
+            ) {
+                if (file.isFile) {
+                    DropdownMenuItem(
+                        text = { Text("Edit", color = textColor) },
+                        onClick = {
+                            expanded = false
+                            onFileClick(file)
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.Edit, null, tint = NeonGreen)
+                        }
+                    )
+                    HorizontalDivider(color = textGray.copy(alpha = 0.2f))
+                }
+
+                DropdownMenuItem(
+                    text = { Text("Rename", color = textColor) },
+                    onClick = {
+                        expanded = false
+                        onRename(file)
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Default.Edit, null, tint = textColor)
+                    }
+                )
+
+                DropdownMenuItem(
+                    text = { Text("Delete", color = Color(0xFFFF5252)) },
+                    onClick = {
+                        expanded = false
+                        onDelete(file)
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Default.Delete, null, tint = Color(0xFFFF5252))
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun EmptyStateView(cardBg: Color, textGray: Color) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(100.dp)
+                .clip(CircleShape)
+                .background(cardBg),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Folder,
+                contentDescription = null,
+                tint = textGray.copy(alpha = 0.5f),
+                modifier = Modifier.size(50.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "Directory is empty",
+            color = textGray,
+            fontSize = 16.sp,
+            fontFamily = FontFamily.Monospace
+        )
+    }
 }

@@ -1,79 +1,87 @@
-/*
- * Created by Mahmoud Aly - engma7moud3ly@gmail.com
- * Project Micro REPL - https://github.com/Ma7moud3ly/micro-repl
- * Copyright (c) 2023 . MIT license.
- *
- */
-
 package micro.repl.ma7moud3ly
 
+import android.app.Application
+import android.content.Context
 import androidx.compose.runtime.mutableStateOf
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import micro.repl.ma7moud3ly.managers.BoardManager
 import micro.repl.ma7moud3ly.managers.TerminalHistoryManager
 import micro.repl.ma7moud3ly.model.ConnectionStatus
 import micro.repl.ma7moud3ly.model.MicroDevice
 import micro.repl.ma7moud3ly.model.MicroFile
 
-/**
- * Holds and manages the UI state for the main application screen.
- *
- * This ViewModel class provides data and state management for the main screen
- * of the application. It exposes LiveData objects for observing changes in
- * the device connection status, connected device, files explorer path, files
- * list, terminal input and output, and command history.
- */
-class MainViewModel : ViewModel() {
+class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    ////// Home
-
-    /**
-     * Represents the current connectivity status of the device.
-     *
-     * Possible values are:
-     * - `ConnectionStatus.Connecting`: Indicates that the device is currently
-     *   attempting to connect.
-     * - `ConnectionStatus.Connected`: Indicates that the device is successfully
-     *   connected.
-     * - `ConnectionStatus.Error`: Indicates that the connection attempt
-     *   failed.
-     */
     val status = MutableStateFlow<ConnectionStatus>(ConnectionStatus.Connecting)
 
-    /**
-     * The currently connected MicroPython device.
-     *
-     * This property is only available when the `status` is `ConnectionStatus.Connected`.
-     * Otherwise, it returns `null`.
-     */
     val microDevice: MicroDevice? get() = (status.value as? ConnectionStatus.Connected)?.microDevice
 
-    ////// Files Explorer
-
-    /**
-     * The current path being displayed in the files explorer.
-     */
     val root = mutableStateOf("/")
-
-    /**
-     * The list of files and directories in the current path of the files explorer.
-     */
     val files = MutableStateFlow<List<MicroFile>>(listOf())
 
-    ////// Terminal
-
-    /**
-     * The current input text in the terminal.
-     */
     val terminalInput = mutableStateOf("")
-
-    /**
-     * The current output text in the terminal.
-     */
     val terminalOutput = mutableStateOf("")
-
-    /**
-     * Manages the command history for the terminal.
-     */
     val history = TerminalHistoryManager()
+
+    private val _navigateToPro = MutableSharedFlow<Boolean>()
+    val navigateToPro = _navigateToPro.asSharedFlow()
+
+    private val _proDeviceId = MutableStateFlow("")
+    val proDeviceId = _proDeviceId.asStateFlow()
+
+    val isProMode = _proDeviceId.map { it.isNotEmpty() && it != "Basic" && it != "Unknown" }
+        .stateIn(viewModelScope, SharingStarted.Lazily, false)
+
+    fun triggerProMode(idName: String) {
+        _proDeviceId.value = idName
+        viewModelScope.launch {
+            _navigateToPro.emit(true)
+        }
+    }
+
+    fun resetProMode() {
+        _proDeviceId.value = ""
+    }
+
+    fun onDeviceConnected(boardManager: BoardManager) {
+        viewModelScope.launch {
+            delay(300)
+            if (status.value is ConnectionStatus.Connected) {
+                try {
+                    val cleanCommand = "\u0003\u0003\r\nprint('#ID:' + BlueCore.DEVICE_ID)\r\n"
+                    boardManager.writeCommand(cleanCommand)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
+    private val prefs = application.getSharedPreferences("micro_repl_prefs", Context.MODE_PRIVATE)
+
+    private val _isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", true))
+    val isDarkMode = _isDarkMode.asStateFlow()
+
+    fun setDarkMode(enable: Boolean) {
+        _isDarkMode.value = enable
+        prefs.edit().putBoolean("dark_mode", enable).apply()
+    }
+
+    private val _fontScale = MutableStateFlow(prefs.getFloat("font_scale", 1.0f))
+    val fontScale = _fontScale.asStateFlow()
+
+    fun setFontScale(scale: Float) {
+        _fontScale.value = scale
+        prefs.edit().putFloat("font_scale", scale).apply()
+    }
 }

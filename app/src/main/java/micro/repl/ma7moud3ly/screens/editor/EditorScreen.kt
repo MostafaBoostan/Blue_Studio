@@ -1,19 +1,48 @@
 package micro.repl.ma7moud3ly.screens.editor
 
-import android.util.Log
+import android.graphics.Typeface
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.github.rosemoe.sora.widget.CodeEditor
+import io.github.rosemoe.sora.widget.schemes.EditorColorScheme
+import micro.repl.ma7moud3ly.MainViewModel
 import micro.repl.ma7moud3ly.managers.EditorAction
 import micro.repl.ma7moud3ly.managers.EditorManager
 import micro.repl.ma7moud3ly.managers.FilesManager
@@ -23,10 +52,13 @@ import micro.repl.ma7moud3ly.screens.dialogs.FileSaveAsDialog
 import micro.repl.ma7moud3ly.screens.dialogs.FileSaveDialog
 import micro.repl.ma7moud3ly.ui.components.rememberMyDialogState
 
-private const val TAG = "EditorScreen"
+private val NeonGreen = Color(0xFF69F0AE)
+// ادیتور همیشه دارک خواهد بود
+private val EditorDarkBg = Color(0xFF121212)
 
 @Composable
 fun EditorScreen(
+    viewModel: MainViewModel,
     canRun: () -> Boolean,
     editorState: EditorState,
     filesManager: FilesManager,
@@ -39,12 +71,17 @@ fun EditorScreen(
     val saveDialog = rememberMyDialogState()
     val saveAsNewDialog = rememberMyDialogState()
 
+    // فقط نوار بالا تم را می‌گیرد، ادیتور همیشه مشکی است
+    val isDarkMode by viewModel.isDarkMode.collectAsState()
+    val panelColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFFFFFFF)
+    val textColor = if (isDarkMode) Color(0xFFEEEEEE) else Color(0xFF121212)
+    val iconColor = if (isDarkMode) Color(0xFFEEEEEE) else Color(0xFF121212)
+
     LaunchedEffect(canRun()) {
         if (canRun()) editorState.canRun.value = true
     }
 
     fun initEditor(codeEditor: CodeEditor) {
-        Log.v(TAG, "initEditor - $editorState")
         editorManager = EditorManager(
             context = context,
             coroutineScope = coroutineScope,
@@ -54,10 +91,21 @@ fun EditorScreen(
             onRun = onRemoteRun,
             afterEdit = onBack
         )
+        codeEditor.typefaceText = Typeface.MONOSPACE
+        codeEditor.isLineNumberEnabled = true
+
+        // تنظیم رنگ‌های ثابت و پایدار (Dark)
+        codeEditor.colorScheme = EditorColorScheme().apply {
+            setColor(EditorColorScheme.WHOLE_BACKGROUND, 0xFF121212.toInt())
+            setColor(EditorColorScheme.TEXT_NORMAL, 0xFFEEEEEE.toInt())
+            setColor(EditorColorScheme.LINE_NUMBER_BACKGROUND, 0xFF1E1E1E.toInt())
+            setColor(EditorColorScheme.LINE_NUMBER, 0xFFB0BEC5.toInt())
+            setColor(EditorColorScheme.SELECTION_INSERT, 0xFF69F0AE.toInt())
+            setColor(EditorColorScheme.SELECTION_HANDLE, 0xFF69F0AE.toInt())
+        }
     }
 
     fun checkAction(action: EditorAction) {
-        Log.i(TAG, "action - $action")
         editorManager?.actionAfterSave = action
         if (editorManager?.saveExisting() == true) {
             if (action == EditorAction.SaveScript) editorManager?.save {
@@ -108,21 +156,73 @@ fun EditorScreen(
         }
     )
 
+    Scaffold(
+        containerColor = EditorDarkBg, // پس زمینه کل صفحه همیشه مشکی
+        topBar = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(panelColor) // نوار بالا رنگش عوض می‌شود (شیک‌تر است)
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { checkAction(EditorAction.CLoseScript) }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = iconColor
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = editorState.title.value,
+                        color = textColor,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
 
-    EditorScreenContent(
-        editorState = editorState,
-        uiEvents = {
-            when (it) {
-                is EditorEvents.Init -> initEditor(it.codeEditor)
-                is EditorEvents.Run -> checkAction(EditorAction.RunScript)
-                is EditorEvents.Save -> checkAction(EditorAction.SaveScript)
-                is EditorEvents.New -> checkAction(EditorAction.NewScript)
-                is EditorEvents.Back -> checkAction(EditorAction.CLoseScript)
-                is EditorEvents.Lines -> editorManager?.toggleLines()
-                is EditorEvents.Clear -> editorManager?.clear()
-                is EditorEvents.Redo -> editorManager?.redo()
-                is EditorEvents.Undo -> editorManager?.undo()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { checkAction(EditorAction.SaveScript) }) {
+                        Icon(
+                            imageVector = Icons.Default.Save,
+                            contentDescription = "Save",
+                            tint = NeonGreen
+                        )
+                    }
+
+                    if (editorState.canRun.value) {
+                        IconButton(onClick = { checkAction(EditorAction.RunScript) }) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Run",
+                                tint = NeonGreen
+                            )
+                        }
+                    }
+                }
             }
         }
-    )
+    ) { padding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .background(EditorDarkBg)
+        ) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    CodeEditor(ctx).apply {
+                        initEditor(this)
+                    }
+                }
+                // بخش update را حذف کردیم تا دیگر رنگ‌ها را تغییر ندهد
+            )
+        }
+    }
 }

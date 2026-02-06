@@ -1,10 +1,3 @@
-/*
- * Created by Mahmoud Aly - engma7moud3ly@gmail.com
- * Project Micro REPL - https://github.com/Ma7moud3ly/micro-repl
- * Copyright (c) 2023 . MIT license.
- *
- */
-
 package micro.repl.ma7moud3ly.managers
 
 import android.annotation.SuppressLint
@@ -21,11 +14,14 @@ import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.Build.VERSION.SDK_INT
 import android.os.Handler
+import android.os.Looper
 import android.os.Parcelable
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
+import com.hoho.android.usbserial.driver.CdcAcmSerialDriver
+import com.hoho.android.usbserial.driver.ProbeTable
+import com.hoho.android.usbserial.driver.UsbSerialDriver
 import com.hoho.android.usbserial.driver.UsbSerialPort
 import com.hoho.android.usbserial.driver.UsbSerialProber
 import com.hoho.android.usbserial.util.SerialInputOutputManager
@@ -35,285 +31,175 @@ import micro.repl.ma7moud3ly.managers.CommandsManager.trimSilentResult
 import micro.repl.ma7moud3ly.model.ConnectionError
 import micro.repl.ma7moud3ly.model.ConnectionStatus
 import micro.repl.ma7moud3ly.model.toMicroDevice
+import java.io.IOException
 
-
-/**
- * Manages the connection and communication with a microcontroller board
- * over a USB serial port.
- *
- * This class handles the following tasks:
- * - Establishing and maintaining a USB serial connection.
- * - Detecting and approving compatible microcontroller boards.
- * - Sending and receiving data/commands to/from the board.
- * - Handling connection status changes and errors.
- *
- * The `BoardManager` currently supports MicroPython boards. It automatically
- * detects and connects to compatible boards upon creation. You can also manually
- * approve or deny devices using the `approveDevice()` and `onDenyDevice()` methods.
- *
- * To send data to the board, use the `write()` or `writeSync()` methods.
- * To receive data from the board, provide a callback to the `onReceiveData`
- * constructor parameter.
- *
- * Connection status changes are reported through the `onStatusChanges` callback.
- * Errors are reported through the `ConnectionStatus.Error` status.
- *
- * @param context The application context.
- * @param onStatusChanges A callback to be invoked when the connection status changes.
- * @param onReceiveData A callback to be invoked when data is received from the board.
- */
 class BoardManager(
     private val context: Context,
     private val onStatusChanges: ((status: ConnectionStatus) -> Unit)? = null,
     private val onReceiveData: ((data: String, clear: Boolean) -> Unit)? = null,
 ) : SerialInputOutputManager.Listener, DefaultLifecycleObserver {
 
+    enum class ExecutionMode {
+        INTERACTIVE,
+        SCRIPT
+    }
+
     companion object {
-        private const val TAG = "BoardManager"
-        private const val ACTION_USB_PERMISSION = "USB_PERMISSION"
-        private const val WRITING_TIMEOUT = 5000
+        private const val ACTION_USB_PERMISSION = "micro.repl.ma7moud3ly.USB_PERMISSION"
+        private const val WRITING_TIMEOUT = 2000 // کاهش تایم‌اوت برای سرعت بیشتر
     }
 
     private val activity = context as Activity
-
     private lateinit var usbManager: UsbManager
     private var serialInputOutputManager: SerialInputOutputManager? = null
-    private var port: UsbSerialPort? = null
-    private val isPortOpen: Boolean get() = port?.isOpen == true
+
+    var port: UsbSerialPort? = null
+    val isPortOpen: Boolean get() = port?.isOpen == true
+
+    val usbSerialPort: UsbSerialPort? get() = port
+
+    fun isConnected(): Boolean {
+        return isPortOpen
+    }
 
     private var onReadSync: ((data: String) -> Unit)? = null
     private var syncData = StringBuilder("")
     private var executionMode = ExecutionMode.INTERACTIVE
     private var permissionGranted = false
 
-    //devices to connect with
-    //only micropython is supported right now
-    private val supportedManufacturers = mutableListOf(
-        "MicroPython" // for micro python
-    )
+    private val supportedManufacturers = mutableListOf("MicroPython")
     private var supportedProducts = mutableSetOf<Int>()
 
-
-    /**
-     * How does it work ?
-     * 1 - Detect Connected Devices
-     * 2 - Check for usb Permission
-     * 3 - Connect to MicroPython/CircuitPython Device
-     */
-
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     init {
         (activity as ComponentActivity).lifecycle.addObserver(this)
         getProducts()
-        onStatusChanges?.invoke(ConnectionStatus.Connecting)
+        // وضعیت اولیه را اعلام نمی‌کنیم تا الکی لودینگ نشان ندهد
     }
 
     override fun onCreate(owner: LifecycleOwner) {
         super.onCreate(owner)
+        // تلاش خودکار برای اتصال در شروع برنامه
         detectUsbDevices()
     }
 
     override fun onDestroy(owner: LifecycleOwner) {
-        Log.i(TAG, "onDestroy")
-        super.onDestroy(owner)
         try {
-            //unregister usb broadcast receiver on destroy to avoid repeating its callback
             context.unregisterReceiver(usbReceiver)
-            if (port?.isOpen == true) port?.close()
-        } catch (e: Exception) {
-            // e.printStackTrace()
-        }
+            disconnect()
+        } catch (e: Exception) {}
     }
 
+    // *** تابع جدید و حیاتی برای قطع اتصال تمیز ***
+    fun disconnect() {
+        try {
+            if (serialInputOutputManager != null) {
+                serialInputOutputManager?.listener = null
+                serialInputOutputManager?.stop()
+                serialInputOutputManager = null
+            }
+            if (port != null) {
+                try {
+                    port?.dtr = false
+                    port?.rts = false
+                } catch (ignored: Exception) {}
+                port?.close()
+                port = null
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        // اعلام وضعیت قطع شدن به UI
+        onStatusChanges?.invoke(ConnectionStatus.Error(ConnectionError.CONNECTION_LOST, "Disconnected"))
+    }
 
-    /**
-     * Public Methods
-     */
-
-
-    /**
-     * Writes the given code in silent mode.
-     *
-     * In silent mode, the output of the code is not displayed in the REPL.
-     * This is useful for executing commands that do not produce output,
-     * or for suppressing unwanted output.
-     *
-     * @param code The code to write.
-     * @param onResponse A callback that will be invoked with the output of
-     * the code, if any.
-     */
-    fun writeInSilentMode(
-        code: String,
-        onResponse: ((data: String) -> Unit)? = null
-    ) {
-        Log.i(TAG, "writeInSilentMode - $code")
+    fun writeInSilentMode(code: String, onResponse: ((data: String) -> Unit)? = null) {
         writeCommand(CommandsManager.SILENT_MODE)
         executionMode = ExecutionMode.SCRIPT
         syncData.clear()
         onReadSync = { result ->
-            //Log.v(TAG, "syncInput - $code")
-            Log.v(TAG, "syncResult - $result")
             onResponse?.invoke(result)
             executionMode = ExecutionMode.INTERACTIVE
             syncData.clear()
             onReadSync = null
         }
         val cmd = "\u000D" + code + "\u000D"
-        try {
-            port?.write(cmd.toByteArray(Charsets.UTF_8), WRITING_TIMEOUT)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        writeToPort(cmd.toByteArray(Charsets.UTF_8))
         writeCommand(CommandsManager.RESET)
     }
 
-    /**
-     * Writes the given code to the serial REPL.
-     *
-     * This method is used to send Python statements to the microcontroller
-     * for immediate execution. The response from the microcontroller, if any,
-     * will be received asynchronously through the `onReceiveData` callback.
-     *
-     * @param code The Python code to write.
-     */
     fun write(code: String) {
-        try {
-            /**
-             *  - \u000D == \r
-             *  - \r is required before code to print >>>
-             *  - \r requires \r after code to echo response
-             */
-            Log.v(TAG, "write: $code")
-            val cmd = "\u000D" + code + "\u000D"
-            port?.write(cmd.toByteArray(Charsets.UTF_8), WRITING_TIMEOUT)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        val cmd = "\u000D" + code + "\u000D"
+        writeToPort(cmd.toByteArray(Charsets.UTF_8))
     }
 
-    /**
-     * Writes a REPL command to the serial port.
-     *
-     * This method is used to send special commands to the microcontroller's
-     * REPL, such as control characters or commands that do not require a
-     * response.
-     *
-     * @param code The REPL command to write.
-     * command has been written to the serial port.
-     */
     fun writeCommand(code: String) {
-        Log.i(TAG, "writeCommand - ${Json.encodeToString(code)}")
+        writeToPort(code.toByteArray(Charsets.UTF_8))
+    }
+
+    private fun writeToPort(data: ByteArray) {
+        if (!isPortOpen) return
         try {
-            port?.write(code.toByteArray(Charsets.UTF_8), WRITING_TIMEOUT)
+            port?.write(data, WRITING_TIMEOUT)
         } catch (e: Exception) {
-            e.printStackTrace()
+            // اگر نوشتن فیل شد، یعنی ارتباط قطع شده
+            onRunError(e)
         }
     }
 
-
-    /**
-     * Detects and lists connected USB devices, and attempts to connect
-     * to a supported device.
-     *
-     * This method scans for connected USB devices and checks if any of them
-     * are compatible with the `BoardManager`. If a supported device is found,
-     * it will attempt to establish a connection. If no supported devices are
-     * found, or if an error occurs during the connection process, an error
-     * status will be reported through the `onStatusChanges` callback.
-     */
     fun detectUsbDevices() {
+        // اگر پورت باز است، اول ببندیم
+        if (isPortOpen) disconnect()
+
         usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
         val deviceList = usbManager.deviceList
 
-        val supportedDevice: UsbDevice? = deviceList.values.filter {
+        if (deviceList.isEmpty()) {
+            onStatusChanges?.invoke(ConnectionStatus.Error(ConnectionError.NO_DEVICES))
+            return
+        }
+
+        // اولویت با دستگاه‌های شناخته شده
+        val supportedDevice: UsbDevice? = deviceList.values.firstOrNull {
             supportedManufacturers.contains(it.manufacturerName) || supportedProducts.contains(it.productId)
-        }.getOrNull(0)
+        } ?: deviceList.values.firstOrNull() // اگر نبود، اولین دستگاه لیست
 
-        Log.i(TAG, "detectUsbDevices - deviceList =  ${deviceList.size}")
-
-        if (supportedDevice != null) approveDevice(supportedDevice)
-        else if (deviceList.isNotEmpty()) {
-            val devices = deviceList.values.map { it.toMicroDevice() }.toList()
-            onStatusChanges?.invoke(ConnectionStatus.Approve(devices = devices))
-        } else throwError(ConnectionError.NO_DEVICES)
-    }
-
-    /**
-     * Approves the given USB device and attempts to connect to it.
-     *
-     * This method should be called after a user has granted permission to
-     * access the USB device. It will attempt to establish a serial connection
-     * to the device and start listening for data.
-     *
-     * @param usbDevice The USB device to approve and connect to.
-     */
-    fun approveDevice(usbDevice: UsbDevice) {
-        try {
-            Log.v(TAG, "supportedDevice - ${usbDevice.deviceName}")
-            if (usbManager.hasPermission(usbDevice)) connectToSerial(usbDevice)
-            else requestUsbPermission(usbDevice)
-        } catch (e: Exception) {
-            e.printStackTrace()
+        if (supportedDevice != null) {
+            // اعلام وضعیت "در حال اتصال"
+            onStatusChanges?.invoke(ConnectionStatus.Connecting)
+            approveDevice(supportedDevice)
+        } else {
+            onStatusChanges?.invoke(ConnectionStatus.Error(ConnectionError.NO_DEVICES))
         }
     }
 
-    /**
-     * Called when the user denies permission to access a USB device.
-     *
-     * This method will report an error status through the `onStatusChanges`
-     * callback, indicating that the device is not supported or permission
-     * was denied.
-     */
-    fun onDenyDevice() {
-        throwError(error = ConnectionError.NOT_SUPPORTED)
+    fun approveDevice(usbDevice: UsbDevice) {
+        try {
+            if (usbManager.hasPermission(usbDevice)) {
+                connectToSerial(usbDevice)
+            } else {
+                requestUsbPermission(usbDevice)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            onStatusChanges?.invoke(ConnectionStatus.Error(ConnectionError.CANT_OPEN_PORT))
+        }
     }
 
-    /**
-     * Called when the connection to the USB device is lost.
-     *
-     * This method will report an error status through the `onStatusChanges`
-     * callback, indicating that the connection has been lost.
-     */
     fun onDisconnectDevice() {
-        throwError(error = ConnectionError.CONNECTION_LOST)
+        disconnect()
     }
 
-    /**
-     * Called when the user chooses to forget a previously connected device.
-     *
-     * This method will disconnect from the device, remove it from the list of
-     * supported devices, and rescan for connected devices.
-     *
-     * @param device The USB device to forget.
-     */
-    fun onForgetDevice(device: UsbDevice) {
-        onDisconnectDevice()
-        removeProduct(device.productId)
-        detectUsbDevices()
-    }
-
-    /**
-     * Requests permission from the user to access the given USB device.
-     *
-     * This method will display a system dialog asking the user to grant
-     * permission to access the USB device. The result of the permission
-     * request will be handled by the `usbReceiver` broadcast receiver.
-     *
-     * @param usbDevice The USB device to request permission for.
-     */
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     private fun requestUsbPermission(usbDevice: UsbDevice) {
-        Log.i(TAG, "requestUsbPermission")
-
         val permissionIntent = PendingIntent.getBroadcast(
             context,
             0,
             Intent(ACTION_USB_PERMISSION).apply { `package` = context.packageName },
-            if (SDK_INT >= 31) FLAG_MUTABLE or FLAG_UPDATE_CURRENT
-            else 0
+            if (SDK_INT >= 31) FLAG_MUTABLE or FLAG_UPDATE_CURRENT else 0
         )
         val filter = IntentFilter(ACTION_USB_PERMISSION)
-
         if (SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             context.registerReceiver(usbReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else context.registerReceiver(usbReceiver, filter)
@@ -322,206 +208,145 @@ class BoardManager(
         usbManager.requestPermission(usbDevice, permissionIntent)
     }
 
-    /**
-     * A broadcast receiver that handles USB permission events.
-     *
-     * This receiver is registered to listen for the `ACTION_USB_PERMISSION`
-     * broadcast, which is sent by the system when the user grants or denies
-     * permission to access a USB device. If permission is granted, this
-     * receiver will attempt to connect to the device. If permission is denied,
-     * it will report an error status.
-     */
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            Log.i(TAG, "onReceive")
-            if (permissionGranted || isPortOpen) return
+            if (isPortOpen) return
             if (ACTION_USB_PERMISSION == intent.action) {
                 synchronized(this) {
-                    Log.d(TAG, "synchronized-onReceive")
                     val device: UsbDevice = intent.parcelable(UsbManager.EXTRA_DEVICE) ?: return
                     if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
                         permissionGranted = true
                         connectToSerial(device)
                     } else {
-                        throwError(ConnectionError.PERMISSION_DENIED)
+                        onStatusChanges?.invoke(ConnectionStatus.Error(ConnectionError.PERMISSION_DENIED))
                     }
                 }
             }
         }
     }
 
-    /**
-     * Establishes a serial connection to the given USB device.
-     *
-     * This method opens a serial port to the device, configures the
-     * connection parameters, and starts listening for data.
-     *
-     * @param usbDevice The USB device to connect to.
-     */
+    private fun getCustomProber(): UsbSerialProber {
+        val customTable = ProbeTable()
+        customTable.addProduct(0x0483, 0xDF11, CdcAcmSerialDriver::class.java)
+        customTable.addProduct(0x0483, 0x3748, CdcAcmSerialDriver::class.java)
+        customTable.addProduct(0x0483, 0x5740, CdcAcmSerialDriver::class.java)
+        return UsbSerialProber(customTable)
+    }
+
     private fun connectToSerial(usbDevice: UsbDevice) {
-        val allDrivers = UsbSerialProber.getDefaultProber().findAllDrivers(usbManager)
-        if (allDrivers.isNullOrEmpty()) {
-            throwError(error = ConnectionError.CANT_OPEN_PORT)
-            return
-        }
-        val ports = allDrivers[0].ports
-        if (ports.isEmpty()) return
-        val connection = usbManager.openDevice(usbDevice) ?: return
-        Log.v(TAG, "connection - $connection")
-        port = ports[0]
-        Log.v(TAG, "port - $port")
+        var driver: UsbSerialDriver? = null
         try {
-            //select port index = 0, micropython usually has one port
-            port?.open(connection)
-            //Micropython is considered  as CdcAcmSerial port
-            //so it requires to enable DTR to exchange data.
-            port?.dtr = true
-        } catch (e: Exception) {
-            e.printStackTrace()
-            throwError(ConnectionError.CANT_OPEN_PORT)
+            driver = getCustomProber().probeDevice(usbDevice)
+        } catch (ignored: Exception) { }
+
+        if (driver == null) {
+            driver = UsbSerialProber.getDefaultProber().probeDevice(usbDevice)
+        }
+        if (driver == null) {
+            driver = CdcAcmSerialDriver(usbDevice)
+        }
+
+        val ports = driver.ports
+        if (ports.isEmpty()) {
+            onStatusChanges?.invoke(ConnectionStatus.Error(ConnectionError.CANT_OPEN_PORT))
             return
         }
-        //set serial connection parameters
-        port?.setParameters(115200, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
-        // listen for micropython outputs in onNewData callback
+
+        val connection = usbManager.openDevice(usbDevice)
+        if (connection == null) {
+            onStatusChanges?.invoke(ConnectionStatus.Error(ConnectionError.CANT_OPEN_PORT))
+            return
+        }
+
+        port = ports[0]
+
+        try {
+            port?.open(connection)
+            // تنظیمات استاندارد MicroPython REPL
+            port?.setParameters(115200, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
+            port?.dtr = true // ریست کردن برد برای اطمینان
+            port?.rts = true
+        } catch (e: IOException) {
+            disconnect()
+            onStatusChanges?.invoke(ConnectionStatus.Error(ConnectionError.CANT_OPEN_PORT))
+            return
+        }
+
         serialInputOutputManager = SerialInputOutputManager(port, this)
         serialInputOutputManager?.start()
 
         if (isPortOpen) {
-            onStatusChanges?.invoke(ConnectionStatus.Connected(usbDevice.toMicroDevice()))
             storeProductId(usbDevice.productId)
-        } else
-            throwError(ConnectionError.CANT_OPEN_PORT)
-
-        Log.i(TAG, "is open ${port?.isOpen}")
+            onStatusChanges?.invoke(ConnectionStatus.Connected(usbDevice.toMicroDevice()))
+        } else {
+            disconnect()
+        }
     }
 
-
-    /**
-     * Called when new data is received from the serial port.
-     *
-     * This method is invoked by the `SerialInputOutputManager` when new data
-     * is available from the USB serial port. It handles the received data
-     * based on the current execution mode.
-     *
-     * @param bytes The received data as a byte array.
-     */
     override fun onNewData(bytes: ByteArray?) {
-        val data = bytes?.toString(Charsets.UTF_8).orEmpty()
-        // when writeSync is called, we need to collect all outputs
-        // of onNewData and append them to a string builder
-        // finally with isDone = true, response is returned to writeSync method
-        when (executionMode) {
-            ExecutionMode.SCRIPT -> {
-                syncData.append(data)
-                Log.v(TAG, "$ $data")
-                val isDone =
-                    isSilentExecutionDone(data) || isSilentExecutionDone(syncData.toString())
-                //Log.v(TAG, "syncData - $syncData")
-                //Log.i(TAG, "isDone = $isDone")
-                if (isDone) {
-                    //Log.i(TAG, "syncData -\n$syncData")
-                    val result = trimSilentResult(syncData.toString())
-                    onReadSync?.invoke(result)
+        if (bytes == null || bytes.isEmpty()) return
+        val data = String(bytes, Charsets.UTF_8)
+
+        mainHandler.post {
+            when (executionMode) {
+                ExecutionMode.SCRIPT -> {
+                    syncData.append(data)
+                    if (isSilentExecutionDone(data) || isSilentExecutionDone(syncData.toString())) {
+                        val result = trimSilentResult(syncData.toString())
+                        onReadSync?.invoke(result)
+                    }
                 }
-            }
-            // in normal write mode, when micropython responses to commands
-            // the output is echoed directly to onReceiveData callback
-            ExecutionMode.INTERACTIVE -> {
-                val response = removeEnding(data)
-                Log.v(TAG, "onNewData - ${Json.encodeToString(response)}")
-                if (response.isNotEmpty() && response.trim() != ">>>") {
-                    val clear = response.contains(CommandsManager.CLEAR)
-                    onReceiveData?.invoke(response, clear)
+                ExecutionMode.INTERACTIVE -> {
+                    // فیلتر کردن دیتای خالی برای جلوگیری از لگ
+                    if (data.isNotEmpty()) {
+                        onReceiveData?.invoke(data, false) // clear همیشه false مگه اینکه دستور خاصی باشه
+                    }
                 }
             }
         }
     }
 
-    /**
-     * Called when an error occurs during serial communication.
-     *
-     * This method is invoked by the `SerialInputOutputManager` when an error
-     * occurs during serial communication, such as a connection loss or a
-     * communication timeout. It reports an error status through the
-     * `onStatusChanges` callback.
-     *
-     * @param e The exception that caused the error.
-     */
     override fun onRunError(e: Exception?) {
-        val errorMessage = e?.message ?: ""
-        Log.e(TAG, "onRunError - ${e?.message}")
-        onStatusChanges?.invoke(ConnectionStatus.Connecting)
-        Handler(activity.mainLooper).postDelayed({
-            if (usbManager.deviceList.isEmpty()) throwError(
-                ConnectionError.CONNECTION_LOST,
-                errorMessage
-            )
-            else throwError(ConnectionError.CANT_OPEN_PORT, errorMessage)
-        }, 2000)
-    }
-
-    private fun throwError(error: ConnectionError, msg: String = "") {
-        if (port?.isOpen == true) port?.close()
-        serialInputOutputManager?.stop()
-        onStatusChanges?.invoke(
-            ConnectionStatus.Error(error = error, msg = msg)
-        )
+        mainHandler.post {
+            disconnect()
+        }
     }
 
     private fun removeEnding(input: String): String {
-        val regexPattern = Regex("\\n>>>\\s*(?:\\r\\n>>>\\s*)*$")
-        return regexPattern.replace(input, "")
+        return input // لاجیک حذف اضافه در اینجا لازم نیست، سمت ویومدل هندل میشه
     }
-
 
     private inline fun <reified T : Parcelable> Intent.parcelable(key: String): T? = when {
         SDK_INT >= 33 -> getParcelableExtra(key, T::class.java)
         else -> @Suppress("DEPRECATION") getParcelableExtra(key) as? T
     }
 
-    /**
-     * Store or Fetch supported product ids in shared-preferences
-     */
-
     private fun removeProduct(productId: Int) {
         supportedProducts.remove(productId)
-        supportedManufacturers.clear()
-        val json = Json.encodeToString(supportedProducts)
-        val sharedPref = activity.getPreferences(Context.MODE_PRIVATE) ?: return
-        with(sharedPref.edit()) {
-            putString("products", json)
-            apply()
-        }
-        Log.v(TAG, "remove ProductId ---> $productId")
+        storeProducts()
     }
 
     private fun storeProductId(productId: Int) {
-        if (supportedProducts.contains(productId)) return
         supportedProducts.add(productId)
+        storeProducts()
+    }
+
+    private fun storeProducts() {
         val json = Json.encodeToString(supportedProducts)
         val sharedPref = activity.getPreferences(Context.MODE_PRIVATE) ?: return
         with(sharedPref.edit()) {
             putString("products", json)
             apply()
         }
-        Log.i(TAG, "store ProductId ---> $productId")
     }
 
     private fun getProducts() {
         val sharedPref = activity.getPreferences(Context.MODE_PRIVATE) ?: return
         val json = sharedPref.getString("products", "").orEmpty()
-        if (json.isEmpty()) return
-        try {
-            supportedProducts = Json.decodeFromString<MutableSet<Int>>(json)
-            //Log.w(TAG, "stored products - $supportedProducts")
-        } catch (e: Exception) {
-            e.printStackTrace()
+        if (json.isNotEmpty()) {
+            try {
+                supportedProducts = Json.decodeFromString(json)
+            } catch (ignored: Exception) {}
         }
     }
-}
-
-enum class ExecutionMode {
-    INTERACTIVE,
-    SCRIPT
 }

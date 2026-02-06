@@ -1,8 +1,8 @@
 [versions]
 
-androidGradlePlugin = "8.10.0"
+androidGradlePlugin = "9.0.0"
 desugarJdk = "2.1.5"
-kotlin = "2.1.20"
+kotlin = "2.2.10"
 firebaseCrashlytics = "3.0.3"
 kotlinSerialization = "2.1.20"
 
