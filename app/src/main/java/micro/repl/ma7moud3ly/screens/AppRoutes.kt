@@ -2,33 +2,31 @@ package micro.repl.ma7moud3ly
 
 import kotlinx.serialization.Serializable
 
-sealed interface AppRoutes {
+sealed class AppRoutes {
     @Serializable
-    data object Home : AppRoutes
+    object Home
 
     @Serializable
-    data object Explorer : AppRoutes
+    data class Terminal(val script: String = "")
 
     @Serializable
-    data object Scripts : AppRoutes
+    data class Editor(val script: String = "", val blank: Boolean = false)
 
     @Serializable
-    data class Terminal(val script: String = "") : AppRoutes
+    object Explorer
 
     @Serializable
-    data class Editor(val script: String = "", val blank: Boolean = false) : AppRoutes
+    object Scripts
 
     @Serializable
-    data object Flash : AppRoutes
+    object Flash
 
     @Serializable
-    data object Settings : AppRoutes
-
-    // --- Pro Mode Routes ---
+    object Settings
 
     @Serializable
-    data object BlueStudioPro : AppRoutes // فقط یک بار باید باشه
+    object BlueStudioPro
 
     @Serializable
-    data object ProDashboard : AppRoutes // فقط یک بار باید باشه
+    object Macros
 }

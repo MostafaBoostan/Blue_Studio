@@ -25,6 +25,7 @@ import micro.repl.ma7moud3ly.screens.editor.EditorScreen
 import micro.repl.ma7moud3ly.screens.explorer.FilesExplorerScreen
 import micro.repl.ma7moud3ly.screens.flash.FlashScreen
 import micro.repl.ma7moud3ly.screens.home.HomeScreen
+import micro.repl.ma7moud3ly.screens.macros.MacrosScreen
 import micro.repl.ma7moud3ly.screens.pro.BlueStudioProScreen
 import micro.repl.ma7moud3ly.screens.scripts.ScriptsScreen
 import micro.repl.ma7moud3ly.screens.settings.SettingsScreen
@@ -40,12 +41,7 @@ fun RootGraph(
 ) {
     var canRun by remember { mutableStateOf(false) }
     val proDeviceIdName by viewModel.proDeviceId.collectAsState()
-
-    // دریافت مسیر فعلی برای جلوگیری از پرش
     val navBackStackEntry by navController.currentBackStackEntryAsState()
-
-    // دریافت نام مسیر به صورت ایمن (با توجه به اینکه از Type-Safe استفاده میکنیم)
-    val currentRoute = navBackStackEntry?.destination?.route
 
     LaunchedEffect(Unit) {
         viewModel.status.collect { status ->
@@ -54,11 +50,7 @@ fun RootGraph(
             } else {
                 canRun = false
                 if (status !is ConnectionStatus.Connecting) {
-
                     viewModel.resetProMode()
-
-                    // فقط اگر در Home نیستیم، برگردیم عقب
-                    // این جلوی رفرش شدن بیخود صفحه هوم و لگ زدن رو میگیره
                     if (navController.previousBackStackEntry != null) {
                         navController.navigate(AppRoutes.Home) {
                             popUpTo(0) { inclusive = true }
@@ -73,7 +65,6 @@ fun RootGraph(
     LaunchedEffect(Unit) {
         viewModel.navigateToPro.collect { shouldNavigate ->
             if (shouldNavigate) {
-                // همیشه نویگیت کن چون دستور جدید اومده
                 navController.navigate(AppRoutes.BlueStudioPro) {
                     popUpTo(AppRoutes.Home) { inclusive = true }
                 }
@@ -95,7 +86,17 @@ fun RootGraph(
                 openEditor = { navController.navigate(AppRoutes.Editor()) },
                 openScripts = { navController.navigate(AppRoutes.Scripts) },
                 openFlasher = { navController.navigate(AppRoutes.Flash) },
-                openSettings = { navController.navigate(AppRoutes.Settings) }
+                openSettings = { navController.navigate(AppRoutes.Settings) },
+                // *** رفع ارور openMacros ***
+                openMacros = { navController.navigate(AppRoutes.Macros) }
+            )
+        }
+
+        composable<AppRoutes.Macros> {
+            MacrosScreen(
+                viewModel = viewModel,
+                boardManager = boardManager, // ارسال boardManager
+                onBack = { navController.popBackStack() }
             )
         }
 

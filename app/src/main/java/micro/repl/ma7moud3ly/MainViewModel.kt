@@ -19,6 +19,14 @@ import micro.repl.ma7moud3ly.managers.TerminalHistoryManager
 import micro.repl.ma7moud3ly.model.ConnectionStatus
 import micro.repl.ma7moud3ly.model.MicroDevice
 import micro.repl.ma7moud3ly.model.MicroFile
+import java.util.UUID
+
+// دیتا کلاس ماکرو
+data class Macro(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val command: String
+)
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -42,6 +50,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isProMode = _proDeviceId.map { it.isNotEmpty() && it != "Basic" && it != "Unknown" }
         .stateIn(viewModelScope, SharingStarted.Lazily, false)
 
+    // *** لیست ماکروها (اصلاح شده) ***
+    private val _macros = MutableStateFlow<List<Macro>>(listOf(
+        Macro(name = "LED 1 On", command = "pyb.LED(1).on()"),
+        Macro(name = "LED 1 Off", command = "pyb.LED(1).off()"),
+        Macro(name = "LED 2 Blink", command = "pyb.LED(2).on(); pyb.delay(200); pyb.LED(2).off()")
+    ))
+    val macros = _macros.asStateFlow()
+
+    fun addMacro(name: String, command: String) {
+        val newList = _macros.value.toMutableList().apply {
+            add(Macro(name = name, command = command))
+        }
+        _macros.value = newList
+    }
+
+    fun removeMacro(macro: Macro) {
+        val newList = _macros.value.toMutableList().apply {
+            remove(macro)
+        }
+        _macros.value = newList
+    }
+
     fun triggerProMode(idName: String) {
         _proDeviceId.value = idName
         viewModelScope.launch {
@@ -53,6 +83,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _proDeviceId.value = ""
     }
 
+    // *** همان کد اتصال قبلی شما ***
     fun onDeviceConnected(boardManager: BoardManager) {
         viewModelScope.launch {
             delay(300)

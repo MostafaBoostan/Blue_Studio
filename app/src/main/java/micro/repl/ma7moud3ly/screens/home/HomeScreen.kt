@@ -45,7 +45,8 @@ fun HomeScreen(
     openScripts: () -> Unit,
     openExplorer: () -> Unit,
     openFlasher: () -> Unit,
-    openSettings: () -> Unit
+    openSettings: () -> Unit,
+    openMacros: () -> Unit // *** اضافه شد ***
 ) {
     val activity = LocalActivity.current as Activity
 
@@ -321,7 +322,13 @@ fun HomeScreen(
                         item(span = { GridItemSpan(2) }) { ProHomeButton("Plotter", Color(0xFFD32F2F), isDarkMode) {} }
                         item(span = { GridItemSpan(2) }) { ProHomeButton("Joystick", Color(0xFF1976D2), isDarkMode) {} }
                         item(span = { GridItemSpan(2) }) { ProHomeButton("Logger", Color(0xFF388E3C), isDarkMode) {} }
-                        item(span = { GridItemSpan(2) }) { ProHomeButton("Macros", Color(0xFFFBC02D), isDarkMode) {} }
+
+                        // *** اتصال دکمه به تابع ***
+                        item(span = { GridItemSpan(2) }) {
+                            ProHomeButton("Macros", Color(0xFFFBC02D), isDarkMode) {
+                                openMacros()
+                            }
+                        }
 
                         item(span = { GridItemSpan(2) }) {
                             HorizontalDivider(
