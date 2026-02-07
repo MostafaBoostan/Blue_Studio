@@ -5,6 +5,8 @@ import android.content.Context
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,8 +32,12 @@ data class Macro(
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    val status = MutableStateFlow<ConnectionStatus>(ConnectionStatus.Connecting)
+    // آماده‌سازی ابزارهای ذخیره‌سازی
+    private val prefs = application.getSharedPreferences("micro_repl_prefs", Context.MODE_PRIVATE)
+    private val gson = Gson()
+    private val MACROS_KEY = "saved_macros_list"
 
+    val status = MutableStateFlow<ConnectionStatus>(ConnectionStatus.Connecting)
     val microDevice: MicroDevice? get() = (status.value as? ConnectionStatus.Connected)?.microDevice
 
     val root = mutableStateOf("/")
@@ -50,12 +56,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isProMode = _proDeviceId.map { it.isNotEmpty() && it != "Basic" && it != "Unknown" }
         .stateIn(viewModelScope, SharingStarted.Lazily, false)
 
-    // *** لیست ماکروها (اصلاح شده) ***
-    private val _macros = MutableStateFlow<List<Macro>>(listOf(
-        Macro(name = "LED 1 On", command = "pyb.LED(1).on()"),
-        Macro(name = "LED 1 Off", command = "pyb.LED(1).off()"),
-        Macro(name = "LED 2 Blink", command = "pyb.LED(2).on(); pyb.delay(200); pyb.LED(2).off()")
-    ))
+    // *** مدیریت ماکروها با قابلیت ذخیره‌سازی ***
+    private val _macros = MutableStateFlow<List<Macro>>(loadMacrosFromStorage())
     val macros = _macros.asStateFlow()
 
     fun addMacro(name: String, command: String) {
@@ -63,6 +65,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             add(Macro(name = name, command = command))
         }
         _macros.value = newList
+        saveMacrosToStorage(newList) // ذخیره فوری
     }
 
     fun removeMacro(macro: Macro) {
@@ -70,7 +73,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             remove(macro)
         }
         _macros.value = newList
+        saveMacrosToStorage(newList) // ذخیره فوری
     }
+
+    // تابع بارگذاری ماکروها از حافظه گوشی
+    private fun loadMacrosFromStorage(): List<Macro> {
+        val json = prefs.getString(MACROS_KEY, null)
+        return if (json != null) {
+            try {
+                val type = object : TypeToken<List<Macro>>() {}.type
+                gson.fromJson(json, type)
+            } catch (e: Exception) {
+                getDefaultMacros()
+            }
+        } else {
+            getDefaultMacros()
+        }
+    }
+
+    // تابع ذخیره ماکروها در حافظه گوشی
+    private fun saveMacrosToStorage(list: List<Macro>) {
+        val json = gson.toJson(list)
+        prefs.edit().putString(MACROS_KEY, json).apply()
+    }
+
+    // لیست پیش‌فرض برای بار اول
+    private fun getDefaultMacros(): List<Macro> {
+        return listOf(
+            Macro(name = "LED 1 On", command = "pyb.LED(1).on()"),
+            Macro(name = "LED 1 Off", command = "pyb.LED(1).off()"),
+            Macro(name = "LED 2 Blink", command = "pyb.LED(2).on(); pyb.delay(200); pyb.LED(2).off()")
+        )
+    }
+
+    // *******************************************
 
     fun triggerProMode(idName: String) {
         _proDeviceId.value = idName
@@ -83,7 +119,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _proDeviceId.value = ""
     }
 
-    // *** همان کد اتصال قبلی شما ***
     fun onDeviceConnected(boardManager: BoardManager) {
         viewModelScope.launch {
             delay(300)
@@ -97,8 +132,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-
-    private val prefs = application.getSharedPreferences("micro_repl_prefs", Context.MODE_PRIVATE)
 
     private val _isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", true))
     val isDarkMode = _isDarkMode.asStateFlow()
