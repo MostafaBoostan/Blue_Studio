@@ -19,12 +19,10 @@ fun BlueStudioProScreen(
     deviceIdName: String, // اسم آیدی رو از ورودی میگیریم
     onFinished: () -> Unit // تابعی که بعد از 3 ثانیه اجرا میشه
 ) {
-    // قفل کردن دکمه بازگشت (که نتونه وسط انیمیشن خارج شه)
     BackHandler(enabled = true) { }
 
-    // *** تایمر 3 ثانیه‌ای ***
     LaunchedEffect(Unit) {
-        delay(3000) // 3000 میلی‌ثانیه = 3 ثانیه
+        delay(1000) // 3000 میلی‌ثانیه = 3 ثانیه
         onFinished() // برو صفحه بعدی
     }
 
