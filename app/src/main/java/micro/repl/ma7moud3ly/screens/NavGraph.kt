@@ -25,7 +25,10 @@ import micro.repl.ma7moud3ly.screens.editor.EditorScreen
 import micro.repl.ma7moud3ly.screens.explorer.FilesExplorerScreen
 import micro.repl.ma7moud3ly.screens.flash.FlashScreen
 import micro.repl.ma7moud3ly.screens.home.HomeScreen
+import micro.repl.ma7moud3ly.screens.joystick.JoystickScreen
+import micro.repl.ma7moud3ly.screens.logger.LoggerScreen
 import micro.repl.ma7moud3ly.screens.macros.MacrosScreen
+import micro.repl.ma7moud3ly.screens.plotter.PlotterScreen
 import micro.repl.ma7moud3ly.screens.pro.BlueStudioProScreen
 import micro.repl.ma7moud3ly.screens.scripts.ScriptsScreen
 import micro.repl.ma7moud3ly.screens.settings.SettingsScreen
@@ -87,22 +90,49 @@ fun RootGraph(
                 openScripts = { navController.navigate(AppRoutes.Scripts) },
                 openFlasher = { navController.navigate(AppRoutes.Flash) },
                 openSettings = { navController.navigate(AppRoutes.Settings) },
-                // *** رفع ارور openMacros ***
-                openMacros = { navController.navigate(AppRoutes.Macros) }
+                openMacros = { navController.navigate(AppRoutes.Macros) },
+                openPlotter = { navController.navigate(AppRoutes.Plotter) },
+                openLogger = { navController.navigate(AppRoutes.Logger) },
+                openJoystick = { navController.navigate(AppRoutes.Joystick) }
+            )
+        }
+
+        composable<AppRoutes.Joystick> {
+            JoystickScreen(
+                viewModel = viewModel,
+                terminalManager = terminalManager,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable<AppRoutes.Plotter> {
+            PlotterScreen(
+                viewModel = viewModel,
+                terminalManager = terminalManager,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable<AppRoutes.Logger> {
+            LoggerScreen(
+                viewModel = viewModel,
+                terminalManager = terminalManager,
+                onBack = { navController.popBackStack() }
             )
         }
 
         composable<AppRoutes.Macros> {
             MacrosScreen(
                 viewModel = viewModel,
-                boardManager = boardManager, // ارسال boardManager
+                boardManager = boardManager,
                 onBack = { navController.popBackStack() }
             )
         }
 
         composable<AppRoutes.Terminal> { backStackEntry ->
             val terminal: AppRoutes.Terminal = backStackEntry.toRoute()
-            val microScript = remember { terminal.script.asMicroScript() }
+            // *** اصلاح شده: استفاده از الویس اپراتور (?:) برای هندل کردن مقدار نال ***
+            val microScript = remember { (terminal.script ?: "").asMicroScript() }
             TerminalScreen(
                 microScript = microScript,
                 viewModel = viewModel,
@@ -114,7 +144,8 @@ fun RootGraph(
 
         composable<AppRoutes.Editor> { backStackEntry ->
             val editor: AppRoutes.Editor = backStackEntry.toRoute()
-            val editorState = remember { EditorState(editor.script.asMicroScript(), editor.blank) }
+            // *** اصلاح شده برای ادیتور هم (محض احتیاط) ***
+            val editorState = remember { EditorState((editor.script ?: "").asMicroScript(), editor.blank) }
             EditorScreen(
                 viewModel = viewModel,
                 canRun = { canRun },

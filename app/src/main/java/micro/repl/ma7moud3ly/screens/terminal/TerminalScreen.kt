@@ -14,9 +14,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -26,10 +27,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -68,6 +72,7 @@ import micro.repl.ma7moud3ly.model.MicroScript
 private val NeonGreen = Color(0xFF69F0AE)
 private val NeonRed = Color(0xFFFF5252)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TerminalScreen(
     microScript: MicroScript,
@@ -98,13 +103,14 @@ fun TerminalScreen(
     val buttonColor = if (isDarkMode) Color.Gray else Color.DarkGray
 
     fun onRun() {
-        coroutineScope.launch {
-            val code = terminalInput
+        val code = terminalInput
+        if (code.isNotEmpty()) {
             viewModel.history.push(code)
-            if (code.contains("\n").not()) terminalManager.eval(code)
-            else terminalManager.evalMultiLine(code)
-            terminalInput = ""
-            scrollState.animateScrollTo(scrollState.maxValue)
+            coroutineScope.launch {
+                if (code.contains("\n").not()) terminalManager.eval(code)
+                else terminalManager.evalMultiLine(code)
+                terminalInput = ""
+            }
         }
     }
 
@@ -162,9 +168,9 @@ fun TerminalScreen(
 
     DisposableEffect(LocalLifecycleOwner.current) {
         onDispose {
-            terminalOutput = ""
-            terminalInput = ""
-            onTerminate()
+            viewModel.terminalOutput.value = ""
+            viewModel.terminalInput.value = ""
+            terminalManager.terminateExecution()
         }
     }
 
@@ -173,38 +179,37 @@ fun TerminalScreen(
     Scaffold(
         containerColor = bgColor,
         topBar = {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(panelBg)
-                    .statusBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = iconColor
+            TopAppBar(
+                title = {
+                    Text(
+                        text = if (microScript.name.isNotEmpty()) microScript.name else "Terminal",
+                        color = textColor,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
                     )
-                }
-
-                Text(
-                    text = if (microScript.name.isNotEmpty()) microScript.name else "Terminal",
-                    color = textColor,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = iconColor
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = {
+                        viewModel.terminalOutput.value = ""
+                        viewModel.terminalInput.value = ""
+                    }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Clear", tint = NeonRed)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = panelBg
                 )
-
-                IconButton(onClick = {
-                    terminalInput = ""
-                    terminalOutput = ""
-                }) {
-                    Icon(Icons.Default.Delete, contentDescription = "Clear", tint = NeonRed)
-                }
-            }
+            )
         }
     ) { padding ->
 
@@ -287,18 +292,13 @@ fun TerminalScreen(
                         ),
                         cursorBrush = SolidColor(terminalTextColor),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(onSend = {
-                            if (terminalInput.isNotEmpty()) {
-                                onRun()
-                            }
-                        }),
+                        keyboardActions = KeyboardActions(onSend = { onRun() }),
                         modifier = Modifier
                             .fillMaxWidth()
                             .focusRequester(focusRequester)
                     )
                 }
-
-                Spacer(modifier = Modifier.size(150.dp))
+                Spacer(modifier = Modifier.height(150.dp))
             }
         }
     }

@@ -32,10 +32,12 @@ import micro.repl.ma7moud3ly.model.ConnectionError
 import micro.repl.ma7moud3ly.model.ConnectionStatus
 import micro.repl.ma7moud3ly.model.toMicroDevice
 import java.io.IOException
+import java.util.concurrent.CopyOnWriteArrayList
 
 class BoardManager(
     private val context: Context,
     private val onStatusChanges: ((status: ConnectionStatus) -> Unit)? = null,
+    // این پارامتر قدیمی رو نگه میداریم که جاهای دیگه کد خراب نشه
     private val onReceiveData: ((data: String, clear: Boolean) -> Unit)? = null,
 ) : SerialInputOutputManager.Listener, DefaultLifecycleObserver {
 
@@ -46,12 +48,20 @@ class BoardManager(
 
     companion object {
         private const val ACTION_USB_PERMISSION = "micro.repl.ma7moud3ly.USB_PERMISSION"
-        private const val WRITING_TIMEOUT = 2000 // کاهش تایم‌اوت برای سرعت بیشتر
+        private const val WRITING_TIMEOUT = 2000
     }
 
     private val activity = context as Activity
     private lateinit var usbManager: UsbManager
     private var serialInputOutputManager: SerialInputOutputManager? = null
+
+    // *** لیست جدید برای ذخیره چندین شنونده (ترمینال + پلاتر) ***
+    private val dataListeners = CopyOnWriteArrayList<(String) -> Unit>()
+
+    // *** تابعی که TerminalManager دنبالش میگرده ***
+    fun addOnDataReceivedListener(listener: (String) -> Unit) {
+        dataListeners.add(listener)
+    }
 
     var port: UsbSerialPort? = null
     val isPortOpen: Boolean get() = port?.isOpen == true
@@ -75,12 +85,17 @@ class BoardManager(
     init {
         (activity as ComponentActivity).lifecycle.addObserver(this)
         getProducts()
-        // وضعیت اولیه را اعلام نمی‌کنیم تا الکی لودینگ نشان ندهد
+
+        // اگر در سازنده کدی داده شده بود، اون رو هم به لیست اضافه میکنیم تا کار کنه
+        if (onReceiveData != null) {
+            addOnDataReceivedListener { data ->
+                onReceiveData.invoke(data, false)
+            }
+        }
     }
 
     override fun onCreate(owner: LifecycleOwner) {
         super.onCreate(owner)
-        // تلاش خودکار برای اتصال در شروع برنامه
         detectUsbDevices()
     }
 
@@ -91,7 +106,6 @@ class BoardManager(
         } catch (e: Exception) {}
     }
 
-    // *** تابع جدید و حیاتی برای قطع اتصال تمیز ***
     fun disconnect() {
         try {
             if (serialInputOutputManager != null) {
@@ -110,7 +124,6 @@ class BoardManager(
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        // اعلام وضعیت قطع شدن به UI
         onStatusChanges?.invoke(ConnectionStatus.Error(ConnectionError.CONNECTION_LOST, "Disconnected"))
     }
 
@@ -143,13 +156,11 @@ class BoardManager(
         try {
             port?.write(data, WRITING_TIMEOUT)
         } catch (e: Exception) {
-            // اگر نوشتن فیل شد، یعنی ارتباط قطع شده
             onRunError(e)
         }
     }
 
     fun detectUsbDevices() {
-        // اگر پورت باز است، اول ببندیم
         if (isPortOpen) disconnect()
 
         usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
@@ -160,13 +171,11 @@ class BoardManager(
             return
         }
 
-        // اولویت با دستگاه‌های شناخته شده
         val supportedDevice: UsbDevice? = deviceList.values.firstOrNull {
             supportedManufacturers.contains(it.manufacturerName) || supportedProducts.contains(it.productId)
-        } ?: deviceList.values.firstOrNull() // اگر نبود، اولین دستگاه لیست
+        } ?: deviceList.values.firstOrNull()
 
         if (supportedDevice != null) {
-            // اعلام وضعیت "در حال اتصال"
             onStatusChanges?.invoke(ConnectionStatus.Connecting)
             approveDevice(supportedDevice)
         } else {
@@ -262,9 +271,8 @@ class BoardManager(
 
         try {
             port?.open(connection)
-            // تنظیمات استاندارد MicroPython REPL
             port?.setParameters(115200, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
-            port?.dtr = true // ریست کردن برد برای اطمینان
+            port?.dtr = true
             port?.rts = true
         } catch (e: IOException) {
             disconnect()
@@ -297,9 +305,11 @@ class BoardManager(
                     }
                 }
                 ExecutionMode.INTERACTIVE -> {
-                    // فیلتر کردن دیتای خالی برای جلوگیری از لگ
                     if (data.isNotEmpty()) {
-                        onReceiveData?.invoke(data, false) // clear همیشه false مگه اینکه دستور خاصی باشه
+                        // *** تغییر مهم: ارسال به تمام شنونده‌ها ***
+                        dataListeners.forEach { listener ->
+                            listener.invoke(data)
+                        }
                     }
                 }
             }
@@ -313,7 +323,7 @@ class BoardManager(
     }
 
     private fun removeEnding(input: String): String {
-        return input // لاجیک حذف اضافه در اینجا لازم نیست، سمت ویومدل هندل میشه
+        return input
     }
 
     private inline fun <reified T : Parcelable> Intent.parcelable(key: String): T? = when {

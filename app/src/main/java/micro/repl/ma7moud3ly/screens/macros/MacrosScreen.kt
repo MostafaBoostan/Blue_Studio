@@ -7,8 +7,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
@@ -33,19 +33,25 @@ fun MacrosScreen(
     val macros by viewModel.macros.collectAsState()
     var showDialog by remember { mutableStateOf(false) }
 
+    val isDarkMode by viewModel.isDarkMode.collectAsState()
+
+    val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val topBarColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFFFFFFF)
+    val cardColor = if (isDarkMode) Color(0xFF2C2C2C) else Color(0xFFFFFFFF)
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    val iconColor = if (isDarkMode) Color.White else Color.Black
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Debug Macros") },
+                title = { Text("Debug Macros", color = textColor) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = iconColor)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF1E1E1E),
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
+                    containerColor = topBarColor
                 )
             )
         },
@@ -57,35 +63,39 @@ fun MacrosScreen(
                 Icon(Icons.Default.Add, contentDescription = "Add Macro", tint = Color.Black)
             }
         },
-        containerColor = Color(0xFF121212)
+        containerColor = bgColor
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).padding(16.dp)) {
+        // اینجا padding اصلی صفحه را اعمال می‌کنیم اما پدینگ لیست را جداگانه میدهیم
+        Column(modifier = Modifier.padding(top = padding.calculateTopPadding())) {
 
             if (macros.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No macros yet. Tap + to add.", color = Color.Gray)
+                    Text("No macros yet. Tap + to add.", color = if (isDarkMode) Color.Gray else Color.DarkGray)
                 }
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 140.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    // *** اصلاح پدینگ برای جلوگیری از بریده شدن سایه و رفتن زیر دکمه FAB ***
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        end = 16.dp,
+                        top = 16.dp,
+                        bottom = 100.dp // فضای کافی برای اسکرول آخر
+                    )
                 ) {
                     items(macros) { macro ->
                         MacroButton(
                             macro = macro,
+                            cardColor = cardColor,
+                            textColor = textColor,
                             onClick = {
-                                // *** منطق هوشمند ارسال کد ***
                                 val cmd = macro.command.trim()
-
                                 if (cmd.contains("\n")) {
-                                    // اگر کد چند خطی بود: استفاده از Paste Mode
-                                    // \u0005 = Ctrl+E (شروع حالت پیست)
-                                    // \u0004 = Ctrl+D (اجرا)
                                     val pasteModePayload = "\u0005" + cmd + "\u0004"
                                     boardManager.writeCommand(pasteModePayload)
                                 } else {
-                                    // اگر تک خطی بود: ارسال معمولی
                                     boardManager.writeCommand(cmd + "\r\n")
                                 }
                             },
@@ -101,6 +111,7 @@ fun MacrosScreen(
 
     if (showDialog) {
         AddMacroDialog(
+            isDarkMode = isDarkMode,
             onDismiss = { showDialog = false },
             onAdd = { name, code ->
                 viewModel.addMacro(name, code)
@@ -111,10 +122,17 @@ fun MacrosScreen(
 }
 
 @Composable
-fun MacroButton(macro: Macro, onClick: () -> Unit, onDelete: () -> Unit) {
+fun MacroButton(
+    macro: Macro,
+    cardColor: Color,
+    textColor: Color,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF2C2C2C)),
+        colors = CardDefaults.cardColors(containerColor = cardColor),
         shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(4.dp), // سایه برای لایت مود
         modifier = Modifier
             .height(100.dp)
             .clickable { onClick() }
@@ -129,13 +147,13 @@ fun MacroButton(macro: Macro, onClick: () -> Unit, onDelete: () -> Unit) {
                 Icon(Icons.Default.Code, contentDescription = null, tint = Color(0xFFFBC02D))
                 Text(
                     text = macro.name,
-                    color = Color.White,
+                    color = textColor,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
                 )
                 Text(
                     text = macro.command.lines().firstOrNull()?.take(20) ?: "Empty",
-                    color = Color.Gray,
+                    color = if (textColor == Color.White) Color.Gray else Color.DarkGray,
                     fontSize = 10.sp,
                     maxLines = 1
                 )
@@ -152,11 +170,21 @@ fun MacroButton(macro: Macro, onClick: () -> Unit, onDelete: () -> Unit) {
 }
 
 @Composable
-fun AddMacroDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit) {
+fun AddMacroDialog(
+    isDarkMode: Boolean,
+    onDismiss: () -> Unit,
+    onAdd: (String, String) -> Unit
+) {
     var name by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
 
+    val containerColor = if (isDarkMode) Color(0xFF2C2C2C) else Color(0xFFFFFFFF)
+    val textColor = if (isDarkMode) Color.White else Color.Black
+
     AlertDialog(
+        containerColor = containerColor,
+        titleContentColor = textColor,
+        textContentColor = textColor,
         onDismissRequest = onDismiss,
         title = { Text("New Macro") },
         text = {
@@ -165,29 +193,42 @@ fun AddMacroDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit) {
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Name (e.g. Blink)") },
-                    singleLine = true
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = textColor,
+                        unfocusedTextColor = textColor,
+                        focusedLabelColor = textColor,
+                        unfocusedLabelColor = Color.Gray
+                    )
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = code,
                     onValueChange = { code = it },
                     label = { Text("Python Code") },
-                    modifier = Modifier.height(150.dp), // ارتفاع بیشتر برای راحتی
-                    singleLine = false, // اجازه نوشتن چند خط
-                    maxLines = 10
+                    modifier = Modifier.height(150.dp),
+                    singleLine = false,
+                    maxLines = 10,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = textColor,
+                        unfocusedTextColor = textColor,
+                        focusedLabelColor = textColor,
+                        unfocusedLabelColor = Color.Gray
+                    )
                 )
             }
         },
         confirmButton = {
             Button(
-                onClick = { if (name.isNotEmpty() && code.isNotEmpty()) onAdd(name, code) }
+                onClick = { if (name.isNotEmpty() && code.isNotEmpty()) onAdd(name, code) },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFBC02D), contentColor = Color.Black)
             ) {
                 Text("Add")
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text("Cancel", color = textColor)
             }
         }
     )
