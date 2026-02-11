@@ -35,17 +35,17 @@ import micro.repl.ma7moud3ly.MainViewModel
 import micro.repl.ma7moud3ly.managers.BoardManager
 import micro.repl.ma7moud3ly.dfu.DfuSeEngine
 import micro.repl.ma7moud3ly.dfu.Usb
+import org.json.JSONObject
 import java.net.URL
 
-// *** لینک مستقیم فایل DFU را اینجا قرار دهید ***
-private const val FIRMWARE_URL = "https://bluewaverobotics.ir/wp-content/uploads/2026/02/firmware.dfu"
+private const val APP_CONFIG_URL = "https://bluewaverobotics.ir/app_config.json"
 
 private val NeonCyan = Color(0xFF00E5FF)
 private val NeonGreen = Color(0xFF69F0AE)
 private val NeonRed = Color(0xFFFF5252)
 private val NeonYellow = Color(0xFFFFAB40)
 private val DangerRed = Color(0xFFD50000)
-private val UpgradePurple = Color(0xFFD500F9) // رنگ مخصوص دکمه آپگرید
+private val UpgradePurple = Color(0xFFD500F9)
 
 @Composable
 fun FlashScreen(
@@ -102,7 +102,6 @@ fun FlashScreen(
         }
     }
 
-    // --- عملیات فلش دستی ---
     fun startFlash() {
         if (selectedFileUri == null) {
             log("> Error: No file selected.")
@@ -139,7 +138,6 @@ fun FlashScreen(
         }
     }
 
-    // --- عملیات ایریس دستی ---
     fun startMassErase() {
         if (!deviceConnected) {
             log("> Error: Not connected.")
@@ -159,7 +157,6 @@ fun FlashScreen(
         }
     }
 
-    // --- عملیات آپگرید آنلاین (دانلود -> ایریس -> فلش) ---
     fun startOnlineUpgrade() {
         if (!deviceConnected) {
             log("> Error: Not connected.")
@@ -169,17 +166,21 @@ fun FlashScreen(
 
         coroutineScope.launch(Dispatchers.IO) {
             try {
-                // 1. دانلود فایل
-                withContext(Dispatchers.Main) { log("> Step 1/3: Downloading Firmware...") }
+                withContext(Dispatchers.Main) { log("> Step 1/4: Checking configuration...") }
 
-                // استفاده از URL برای دانلود مستقیم فایل
-                val url = URL(FIRMWARE_URL)
-                // دانلود بایت‌ها
-                val firmwareBytes = url.readBytes()
+                val configUrl = URL("$APP_CONFIG_URL?t=${System.currentTimeMillis()}")
+                val jsonContent = configUrl.readText()
+                val rootObject = JSONObject(jsonContent)
+                val firmwareObject = rootObject.getJSONObject("firmware")
+                val downloadUrlString = firmwareObject.getString("url")
+
+                withContext(Dispatchers.Main) { log("> Firmware found! Downloading...") }
+
+                val firmwareUrl = URL(downloadUrlString)
+                val firmwareBytes = firmwareUrl.readBytes()
 
                 withContext(Dispatchers.Main) { log("> Download Complete (${firmwareBytes.size} bytes).") }
 
-                // 2. پاکسازی کامل
                 withContext(Dispatchers.Main) { log("> Step 2/3: Erasing Chip...") }
                 val eraseSuccess = dfuEngine.fullChipErase { msg ->
                     coroutineScope.launch(Dispatchers.Main) { log(msg) }
@@ -191,7 +192,6 @@ fun FlashScreen(
                     return@launch
                 }
 
-                // 3. فلش کردن فایل دانلود شده
                 withContext(Dispatchers.Main) { log("> Step 3/3: Flashing New Firmware...") }
                 val flashSuccess = dfuEngine.flashFirmware(firmwareBytes) { msg ->
                     coroutineScope.launch(Dispatchers.Main) { log(msg) }
@@ -204,7 +204,10 @@ fun FlashScreen(
 
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    log("> [Network/Error]: ${e.localizedMessage}")
+                    log("> [Error]: ${e.localizedMessage}")
+                    if (e.message?.contains("JSONObject") == true) {
+                        log("> JSON Format Error. Check 'firmware' section.")
+                    }
                     e.printStackTrace()
                 }
             } finally {
@@ -254,7 +257,6 @@ fun FlashScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
 
-            // دکمه اتصال
             NeonCard(
                 title = if (deviceConnected) "Connected" else "Connect",
                 desc = if (deviceConnected) "Tap to disconnect" else "Find Device",
@@ -266,12 +268,11 @@ fun FlashScreen(
                 onClick = { toggleConnection() }
             )
 
-            // *** دکمه جدید آپگرید آنلاین ***
             NeonCard(
                 title = "Online Upgrade",
-                desc = "Download & Flash Latest FW",
+                desc = "Check Cloud & Flash",
                 icon = Icons.Default.CloudDownload,
-                color = UpgradePurple, // رنگ بنفش
+                color = UpgradePurple,
                 cardBg = cardBg,
                 textColor = textColor,
                 descColor = descColor,
@@ -280,7 +281,6 @@ fun FlashScreen(
 
             Divider(color = descColor.copy(alpha = 0.2f), thickness = 1.dp)
 
-            // بخش انتخاب فایل دستی
             NeonCard(
                 title = fileName,
                 desc = if(selectedFileUri == null) "Click to browse .dfu files" else "Ready to flash",
@@ -292,7 +292,6 @@ fun FlashScreen(
                 onClick = { launcher.launch("*/*") }
             )
 
-            // دکمه‌های دستی (Erase / Flash)
             Row(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -370,7 +369,7 @@ fun NeonCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 100.dp) // قابلیت تغییر سایز خودکار
+            .heightIn(min = 100.dp)
             .clip(RoundedCornerShape(15.dp))
             .background(cardBg)
             .border(1.dp, color.copy(alpha = 0.3f), RoundedCornerShape(15.dp))

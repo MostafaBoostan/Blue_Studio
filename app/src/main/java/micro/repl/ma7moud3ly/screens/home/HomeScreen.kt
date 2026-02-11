@@ -1,6 +1,8 @@
 package micro.repl.ma7moud3ly.screens.home
 
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.Image
@@ -30,10 +32,17 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import micro.repl.ma7moud3ly.MainViewModel
 import micro.repl.ma7moud3ly.managers.BoardManager
 import micro.repl.ma7moud3ly.managers.TerminalManager
 import micro.repl.ma7moud3ly.model.ConnectionStatus
+import org.json.JSONObject
+import java.net.URL
+
+private const val APP_CONFIG_URL = "https://bluewaverobotics.ir/app_config.json"
 
 @Composable
 fun HomeScreen(
@@ -49,9 +58,10 @@ fun HomeScreen(
     openMacros: () -> Unit,
     openPlotter: () -> Unit,
     openLogger: () -> Unit,
-    openJoystick: () -> Unit // *** اضافه شد ***
+    openJoystick: () -> Unit
 ) {
     val activity = LocalActivity.current as Activity
+    val coroutineScope = rememberCoroutineScope()
 
     val isDarkMode by viewModel.isDarkMode.collectAsState()
     val isProMode by viewModel.isProMode.collectAsState()
@@ -88,11 +98,28 @@ fun HomeScreen(
     }
 
     fun onHelp() {
-        try {
-            val url = "https://bluewaverobotics.ir"
-            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
-            activity.startActivity(intent)
-        } catch (e: Exception) { e.printStackTrace() }
+        Toast.makeText(activity, "Fetching Documentation...", Toast.LENGTH_SHORT).show()
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                val configUrl = URL("$APP_CONFIG_URL?t=${System.currentTimeMillis()}")
+                val jsonContent = configUrl.readText()
+                val rootObject = JSONObject(jsonContent)
+                val linksObject = rootObject.optJSONObject("links")
+                val docUrl = linksObject?.optString("documentation", "https://bluewaverobotics.ir")
+                    ?: "https://bluewaverobotics.ir"
+
+                withContext(Dispatchers.Main) {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(docUrl))
+                    activity.startActivity(intent)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://bluewaverobotics.ir"))
+                    activity.startActivity(intent)
+                }
+            }
+        }
     }
 
     val connectTitle = when {
