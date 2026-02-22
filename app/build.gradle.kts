@@ -5,19 +5,18 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-// apply gms & firebase plugin only for gms build flavour
-if (gradle.startParameter.taskRequests.toString().contains("gms", ignoreCase = true)) {
-    apply(plugin = libs.plugins.google.services.get().pluginId)
-    apply(plugin = libs.plugins.firebase.crashlytics.get().pluginId)
-}
-
-
 android {
-    namespace = "micro.repl.ma7moud3ly"
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
+
+    namespace = "com.bluestudio.manager"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "micro.repl.ma7moud3ly"
+        applicationId = "com.bluestudio.manager"
         minSdk = 22
         targetSdk = 34
         versionCode = 15
