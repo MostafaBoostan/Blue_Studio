@@ -4,19 +4,7 @@ import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -29,29 +17,19 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bluestudio.manager.MainViewModel
@@ -66,48 +44,50 @@ private val NeonGreen = Color(0xFF69F0AE)
 
 @Composable
 fun ScriptsScreen(
-    viewModel: com.bluestudio.manager.MainViewModel,
+    viewModel: MainViewModel,
     onBack: () -> Unit,
     onNewScript: () -> Unit,
-    onOpenLocalScript: (com.bluestudio.manager.model.MicroScript) -> Unit
+    onOpenLocalScript: (MicroScript) -> Unit
 ) {
     val context = LocalContext.current
-    val scriptsManager = remember {
-        _root_ide_package_.com.bluestudio.manager.managers.ScriptsManager(
-            context
-        )
-    }
-    val renameFileDialog =
-        _root_ide_package_.com.bluestudio.manager.ui.components.rememberMyDialogState()
-    val deleteFileDialog =
-        _root_ide_package_.com.bluestudio.manager.ui.components.rememberMyDialogState()
-    var selectedScript by remember { mutableStateOf<com.bluestudio.manager.model.MicroScript?>(null) }
+    val scriptsManager = remember { ScriptsManager(context) }
+
+    // دیالوگ‌ها
+    val renameFileDialog = rememberMyDialogState()
+    val deleteFileDialog = rememberMyDialogState()
+
+    var selectedScript by remember { mutableStateOf<MicroScript?>(null) }
     val scripts = remember { scriptsManager.scripts }
 
+    // وضعیت زبان و تم
     val isDarkMode by viewModel.isDarkMode.collectAsState()
+    val currentLanguage by viewModel.currentLanguage.collectAsState()
+    val isFa = currentLanguage == "fa"
+    val layoutDirection = if (isFa) LayoutDirection.Rtl else LayoutDirection.Ltr
 
+    // رنگ‌ها
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val cardBg = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFFFFFFF)
     val textColor = if (isDarkMode) Color(0xFFEEEEEE) else Color(0xFF121212)
     val textGray = if (isDarkMode) Color(0xFFB0BEC5) else Color(0xFF757575)
 
-    _root_ide_package_.com.bluestudio.manager.screens.dialogs.FileRenameDialog(
+    FileRenameDialog(
         state = renameFileDialog,
         name = { selectedScript?.name.orEmpty() },
         onOk = { newName ->
-            scriptsManager.renameScript(selectedScript!!, newName)
+            selectedScript?.let { scriptsManager.renameScript(it, newName) }
         }
     )
 
-    _root_ide_package_.com.bluestudio.manager.screens.dialogs.FileDeleteDialog(
+    FileDeleteDialog(
         state = deleteFileDialog,
         name = { selectedScript?.name.orEmpty() },
         onOk = {
-            scriptsManager.deleteScript(selectedScript!!)
+            selectedScript?.let { scriptsManager.deleteScript(it) }
         }
     )
 
-    fun readLocalScript(script: com.bluestudio.manager.model.MicroScript) {
+    fun readLocalScript(script: MicroScript) {
         try {
             val content = scriptsManager.read(script.file)
             script.content = content
@@ -118,42 +98,45 @@ fun ScriptsScreen(
         }
     }
 
-    ScriptsScreenContent(
-        scripts = { scripts },
-        bgColor = bgColor,
-        cardBg = cardBg,
-        textColor = textColor,
-        textGray = textGray,
-        uiEvents = {
-            when (it) {
-                is ScriptsEvents.Back -> onBack()
-                is ScriptsEvents.NewScript -> onNewScript()
-                is ScriptsEvents.Open -> readLocalScript(it.script)
-                is ScriptsEvents.Share -> scriptsManager.shareScript(it.script)
-                is ScriptsEvents.Delete -> {
-                    selectedScript = it.script
-                    deleteFileDialog.show()
+    // اعمال جهت (RTL/LTR)
+    CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
+        ScriptsScreenContent(
+            scripts = { scripts },
+            isFa = isFa,
+            bgColor = bgColor,
+            cardBg = cardBg,
+            textColor = textColor,
+            textGray = textGray,
+            uiEvents = { event ->
+                when (event) {
+                    is ScriptScreenEvent.Back -> onBack()
+                    is ScriptScreenEvent.NewScript -> onNewScript()
+                    is ScriptScreenEvent.Open -> readLocalScript(event.script)
+                    is ScriptScreenEvent.Share -> scriptsManager.shareScript(event.script)
+                    is ScriptScreenEvent.Delete -> {
+                        selectedScript = event.script
+                        deleteFileDialog.show()
+                    }
+                    is ScriptScreenEvent.Rename -> {
+                        selectedScript = event.script
+                        renameFileDialog.show()
+                    }
+                    is ScriptScreenEvent.Run -> {}
                 }
-
-                is ScriptsEvents.Rename -> {
-                    selectedScript = it.script
-                    renameFileDialog.show()
-                }
-
-                is ScriptsEvents.Run -> {}
             }
-        }
-    )
+        )
+    }
 }
 
 @Composable
 fun ScriptsScreenContent(
-    scripts: () -> List<com.bluestudio.manager.model.MicroScript>,
+    scripts: () -> List<MicroScript>,
+    isFa: Boolean,
     bgColor: Color,
     cardBg: Color,
     textColor: Color,
     textGray: Color,
-    uiEvents: (ScriptsEvents) -> Unit
+    uiEvents: (ScriptScreenEvent) -> Unit
 ) {
     Scaffold(
         containerColor = bgColor,
@@ -167,7 +150,8 @@ fun ScriptsScreenContent(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                IconButton(onClick = { uiEvents(ScriptsEvents.Back) }) {
+                IconButton(onClick = { uiEvents(ScriptScreenEvent.Back) }) {
+                    // آیکون در RTL خودکار برعکس می‌شود
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
@@ -175,18 +159,19 @@ fun ScriptsScreenContent(
                     )
                 }
                 Text(
-                    text = "My Scripts",
+                    text = if(isFa) "اسکریپت‌های من" else "My Scripts",
                     color = textColor,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace
                 )
+                // Spacer برای تراز تقریبی
                 Spacer(modifier = Modifier.size(48.dp))
             }
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { uiEvents(ScriptsEvents.NewScript) },
+                onClick = { uiEvents(ScriptScreenEvent.NewScript) },
                 containerColor = NeonGreen,
                 contentColor = Color.Black
             ) {
@@ -211,7 +196,7 @@ fun ScriptsScreenContent(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "No scripts found",
+                    text = if(isFa) "اسکریپتی یافت نشد" else "No scripts found",
                     color = textGray,
                     fontFamily = FontFamily.Monospace
                 )
@@ -227,13 +212,14 @@ fun ScriptsScreenContent(
                 items(scriptList) { script ->
                     ScriptItemView(
                         script = script,
+                        isFa = isFa,
                         cardBg = cardBg,
                         textColor = textColor,
                         textGray = textGray,
-                        onOpen = { uiEvents(ScriptsEvents.Open(it)) },
-                        onRename = { uiEvents(ScriptsEvents.Rename(it)) },
-                        onDelete = { uiEvents(ScriptsEvents.Delete(it)) },
-                        onShare = { uiEvents(ScriptsEvents.Share(it)) }
+                        onOpen = { uiEvents(ScriptScreenEvent.Open(it)) },
+                        onRename = { uiEvents(ScriptScreenEvent.Rename(it)) },
+                        onDelete = { uiEvents(ScriptScreenEvent.Delete(it)) },
+                        onShare = { uiEvents(ScriptScreenEvent.Share(it)) }
                     )
                 }
             }
@@ -243,14 +229,15 @@ fun ScriptsScreenContent(
 
 @Composable
 fun ScriptItemView(
-    script: com.bluestudio.manager.model.MicroScript,
+    script: MicroScript,
+    isFa: Boolean,
     cardBg: Color,
     textColor: Color,
     textGray: Color,
-    onOpen: (com.bluestudio.manager.model.MicroScript) -> Unit,
-    onRename: (com.bluestudio.manager.model.MicroScript) -> Unit,
-    onDelete: (com.bluestudio.manager.model.MicroScript) -> Unit,
-    onShare: (com.bluestudio.manager.model.MicroScript) -> Unit
+    onOpen: (MicroScript) -> Unit,
+    onRename: (MicroScript) -> Unit,
+    onDelete: (MicroScript) -> Unit,
+    onShare: (MicroScript) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -282,15 +269,18 @@ fun ScriptItemView(
         Spacer(modifier = Modifier.width(16.dp))
 
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = script.name,
-                color = textColor,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 16.sp,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            // *** نام اسکریپت همیشه LTR باشد ***
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Text(
+                    text = script.name,
+                    color = textColor,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 16.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
 
         Box {
@@ -302,6 +292,7 @@ fun ScriptItemView(
                 )
             }
 
+            // منوها راست‌چین می‌شوند (اگر زبان فارسی باشد)
             DropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
@@ -309,7 +300,7 @@ fun ScriptItemView(
                 modifier = Modifier.background(cardBg)
             ) {
                 DropdownMenuItem(
-                    text = { Text("Rename", color = textColor) },
+                    text = { Text(if (isFa) "تغییر نام" else "Rename", color = textColor) },
                     onClick = {
                         expanded = false
                         onRename(script)
@@ -320,7 +311,7 @@ fun ScriptItemView(
                 )
 
                 DropdownMenuItem(
-                    text = { Text("Share", color = textColor) },
+                    text = { Text(if (isFa) "اشتراک‌گذاری" else "Share", color = textColor) },
                     onClick = {
                         expanded = false
                         onShare(script)
@@ -333,7 +324,7 @@ fun ScriptItemView(
                 HorizontalDivider(color = textGray.copy(alpha = 0.2f))
 
                 DropdownMenuItem(
-                    text = { Text("Delete", color = Color(0xFFFF5252)) },
+                    text = { Text(if (isFa) "حذف" else "Delete", color = Color(0xFFFF5252)) },
                     onClick = {
                         expanded = false
                         onDelete(script)
@@ -345,4 +336,15 @@ fun ScriptItemView(
             }
         }
     }
+}
+
+// *** تغییر نام کلاس برای جلوگیری از تداخل با UIEvents.kt ***
+sealed class ScriptScreenEvent {
+    object Back : ScriptScreenEvent()
+    object NewScript : ScriptScreenEvent()
+    data class Open(val script: MicroScript) : ScriptScreenEvent()
+    data class Share(val script: MicroScript) : ScriptScreenEvent()
+    data class Delete(val script: MicroScript) : ScriptScreenEvent()
+    data class Rename(val script: MicroScript) : ScriptScreenEvent()
+    data class Run(val script: MicroScript) : ScriptScreenEvent()
 }

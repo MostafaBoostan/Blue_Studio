@@ -24,9 +24,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -38,21 +40,24 @@ import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
 import com.github.mikephil.charting.highlight.Highlight
 import com.github.mikephil.charting.listener.OnChartValueSelectedListener
-import com.bluestudio.manager.MainViewModel // ایمپورت ویومدل
+import com.bluestudio.manager.MainViewModel
 import com.bluestudio.manager.managers.TerminalManager
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlotterScreen(
-    viewModel: com.bluestudio.manager.MainViewModel, // اضافه شدن ویومدل برای تشخیص تم
-    terminalManager: com.bluestudio.manager.managers.TerminalManager,
+    viewModel: MainViewModel,
+    terminalManager: TerminalManager,
     onBack: () -> Unit
 ) {
-    // *** تشخیص تم ***
+    // *** تشخیص تم و زبان ***
     val isDarkMode by viewModel.isDarkMode.collectAsState()
+    val currentLanguage by viewModel.currentLanguage.collectAsState()
+    val isFa = currentLanguage == "fa"
+    val layoutDirection = if (isFa) LayoutDirection.Rtl else LayoutDirection.Ltr
 
-    // پالت رنگی بر اساس تم
+    // پالت رنگی
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val cardColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFFFFFFF)
     val terminalBg = if (isDarkMode) Color(0xFF0F0F0F) else Color(0xFFEEEEEE)
@@ -61,7 +66,7 @@ fun PlotterScreen(
     val accentColor = Color(0xFF00E5FF)
     val borderColor = if (isDarkMode) Color(0xFF333333) else Color(0xFFDDDDDD)
 
-    // رنگ‌های نمودار (چون کتابخانه جاوا است باید Integer باشد)
+    // رنگ‌های نمودار (جاوا)
     val chartAxisColor = if (isDarkMode) android.graphics.Color.LTGRAY else android.graphics.Color.DKGRAY
     val chartGridColor = if (isDarkMode) android.graphics.Color.parseColor("#333333") else android.graphics.Color.parseColor("#E0E0E0")
 
@@ -127,7 +132,6 @@ fun PlotterScreen(
         scrollState.animateScrollTo(scrollState.maxValue)
     }
 
-    // آپدیت رنگ‌های نمودار وقتی تم عوض میشه
     LaunchedEffect(isDarkMode) {
         chartRef.value?.let { chart ->
             chart.xAxis.textColor = chartAxisColor
@@ -147,6 +151,7 @@ fun PlotterScreen(
         }
     }
 
+    // دیالوگ راهنما
     if (showHelp) {
         Dialog(onDismissRequest = { showHelp = false }) {
             Card(
@@ -155,22 +160,26 @@ fun PlotterScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Text("Plotter Guide", color = textColor, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text(if(isFa) "راهنمای پلاتر" else "Plotter Guide", color = textColor, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(10.dp))
-                    Text("Paste this code to visualize sine wave:", color = Color.Gray, fontSize = 14.sp)
+                    Text(if(isFa) "کد زیر را برای تست موج سینوسی کپی کنید:" else "Paste this code to visualize sine wave:", color = Color.Gray, fontSize = 14.sp)
                     Spacer(modifier = Modifier.height(10.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(terminalBg, RoundedCornerShape(8.dp))
-                            .padding(12.dp)
-                    ) {
-                        Text(
-                            text = "import math\nimport time\nx = 0\nwhile True:\n  print(math.sin(x))\n  x += 0.2\n  time.sleep(0.05)",
-                            color = terminalTextColor,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp
-                        )
+
+                    // کد همیشه LTR باشد
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(terminalBg, RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        ) {
+                            Text(
+                                text = "import math\nimport time\nx = 0\nwhile True:\n  print(math.sin(x))\n  x += 0.2\n  time.sleep(0.05)",
+                                color = terminalTextColor,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp
+                            )
+                        }
                     }
                     Spacer(modifier = Modifier.height(15.dp))
                     Button(
@@ -178,187 +187,199 @@ fun PlotterScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = accentColor),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("OK", color = Color.Black, fontWeight = FontWeight.Bold)
+                        Text(if(isFa) "متوجه شدم" else "OK", color = Color.Black, fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Live Plotter", color = textColor, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Box(modifier = Modifier.background(accentColor.copy(0.2f), RoundedCornerShape(4.dp)).padding(horizontal=4.dp)) {
-                            Text("PRO", color = accentColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        terminalManager.sendCommand("\u0003")
-                        onBack()
-                    }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = textColor)
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { showHelp = true }) {
-                        Icon(Icons.Default.Info, contentDescription = "Help", tint = Color(0xFFFFAB40))
-                    }
-                    IconButton(onClick = {
-                        entries.clear()
-                        xValue = 0
-                        chartRef.value?.clear()
-                        terminalOutput = ""
-                        selectedPoint = ""
-                    }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Clear", tint = textColor)
-                    }
-                    IconButton(onClick = { isRunning = !isRunning }) {
-                        Icon(
-                            if (isRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = "Pause",
-                            tint = if(isRunning) Color(0xFF69F0AE) else Color.Red
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = bgColor)
-            )
-        },
-        containerColor = bgColor
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Chart Card
-            Card(
-                modifier = Modifier.weight(0.5f).fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = cardColor),
-                border = BorderStroke(1.dp, borderColor)
-            ) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    AndroidView(
-                        modifier = Modifier.fillMaxSize().padding(8.dp),
-                        factory = { context ->
-                            LineChart(context).apply {
-                                layoutParams = LinearLayout.LayoutParams(-1, -1)
-                                description.isEnabled = false
-                                legend.isEnabled = false
-                                axisRight.isEnabled = false
-                                setTouchEnabled(true)
-                                setDragEnabled(true)
-                                setScaleEnabled(true)
-                                setPinchZoom(true)
-                                xAxis.position = XAxis.XAxisPosition.BOTTOM
-                                xAxis.textColor = chartAxisColor
-                                xAxis.setDrawGridLines(false)
-                                axisLeft.textColor = chartAxisColor
-                                axisLeft.gridColor = chartGridColor
-
-                                setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
-                                    override fun onValueSelected(e: Entry?, h: Highlight?) {
-                                        e?.let {
-                                            val x = String.format(Locale.US, "%.1f", it.x)
-                                            val y = String.format(Locale.US, "%.2f", it.y)
-                                            selectedPoint = "T: $x | V: $y"
-                                        }
-                                    }
-                                    override fun onNothingSelected() { selectedPoint = "" }
-                                })
-                                chartRef.value = this
+    // اعمال جهت (RTL/LTR)
+    CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(if(isFa) "پلاتر زنده" else "Live Plotter", color = textColor, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(modifier = Modifier.background(accentColor.copy(0.2f), RoundedCornerShape(4.dp)).padding(horizontal=4.dp)) {
+                                Text("PRO", color = accentColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
-                        },
-                        // این بخش مهمه: وقتی تم عوض میشه رنگ‌ها رو آپدیت میکنه
-                        update = { chart ->
-                            chart.xAxis.textColor = chartAxisColor
-                            chart.axisLeft.textColor = chartAxisColor
-                            chart.axisLeft.gridColor = chartGridColor
-                            chart.invalidate()
                         }
-                    )
-
-                    if (selectedPoint.isNotEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopCenter)
-                                .padding(top = 10.dp)
-                                .background(accentColor.copy(alpha = 0.9f), RoundedCornerShape(8.dp))
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text(selectedPoint, color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = {
+                            terminalManager.sendCommand("\u0003")
+                            onBack()
+                        }) {
+                            // آیکون در RTL خودکار برعکس می‌شود
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = textColor)
                         }
-                    }
-                }
-            }
-
-            // Terminal Output Card
-            Card(
-                modifier = Modifier.weight(0.3f).fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = terminalBg),
-                border = BorderStroke(1.dp, borderColor)
+                    },
+                    actions = {
+                        IconButton(onClick = { showHelp = true }) {
+                            Icon(Icons.Default.Info, contentDescription = "Help", tint = Color(0xFFFFAB40))
+                        }
+                        IconButton(onClick = {
+                            entries.clear()
+                            xValue = 0
+                            chartRef.value?.clear()
+                            terminalOutput = ""
+                            selectedPoint = ""
+                        }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Clear", tint = textColor)
+                        }
+                        IconButton(onClick = { isRunning = !isRunning }) {
+                            Icon(
+                                if (isRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = "Pause",
+                                tint = if(isRunning) Color(0xFF69F0AE) else Color.Red
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = bgColor)
+                )
+            },
+            containerColor = bgColor
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .padding(padding)
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Box(modifier = Modifier.padding(8.dp).fillMaxSize()) {
-                    Text(
-                        text = if(terminalOutput.isEmpty()) "// Output logs..." else terminalOutput,
-                        color = if(terminalOutput.isEmpty()) Color.Gray else terminalTextColor,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        modifier = Modifier.verticalScroll(scrollState)
-                    )
-                }
-            }
-
-            // Input Area
-            Row(
-                modifier = Modifier.fillMaxWidth().height(100.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .background(cardColor, RoundedCornerShape(12.dp))
-                        .border(1.dp, borderColor, RoundedCornerShape(12.dp))
-                        .padding(12.dp)
-                ) {
-                    if (terminalInput.isEmpty()) {
-                        Text("Code here...", color = Color.Gray, fontSize = 12.sp)
-                    }
-                    BasicTextField(
-                        value = terminalInput,
-                        onValueChange = { terminalInput = it },
-                        textStyle = TextStyle(
-                            color = textColor,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 13.sp
-                        ),
-                        cursorBrush = SolidColor(accentColor),
-                        singleLine = false,
-                        keyboardOptions = KeyboardOptions.Default,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-
-                Button(
-                    onClick = { sendCommand() },
+                // Chart Card
+                Card(
+                    modifier = Modifier.weight(0.5f).fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = accentColor),
-                    modifier = Modifier.width(70.dp).fillMaxHeight()
+                    colors = CardDefaults.cardColors(containerColor = cardColor),
+                    border = BorderStroke(1.dp, borderColor)
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(24.dp))
-                        Text("RUN", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        // نمودار همیشه LTR باشد
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            AndroidView(
+                                modifier = Modifier.fillMaxSize().padding(8.dp),
+                                factory = { context ->
+                                    LineChart(context).apply {
+                                        layoutParams = LinearLayout.LayoutParams(-1, -1)
+                                        description.isEnabled = false
+                                        legend.isEnabled = false
+                                        axisRight.isEnabled = false
+                                        setTouchEnabled(true)
+                                        setDragEnabled(true)
+                                        setScaleEnabled(true)
+                                        setPinchZoom(true)
+                                        xAxis.position = XAxis.XAxisPosition.BOTTOM
+                                        xAxis.textColor = chartAxisColor
+                                        xAxis.setDrawGridLines(false)
+                                        axisLeft.textColor = chartAxisColor
+                                        axisLeft.gridColor = chartGridColor
+
+                                        setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
+                                            override fun onValueSelected(e: Entry?, h: Highlight?) {
+                                                e?.let {
+                                                    val x = String.format(Locale.US, "%.1f", it.x)
+                                                    val y = String.format(Locale.US, "%.2f", it.y)
+                                                    selectedPoint = "T: $x | V: $y"
+                                                }
+                                            }
+                                            override fun onNothingSelected() { selectedPoint = "" }
+                                        })
+                                        chartRef.value = this
+                                    }
+                                },
+                                update = { chart ->
+                                    chart.xAxis.textColor = chartAxisColor
+                                    chart.axisLeft.textColor = chartAxisColor
+                                    chart.axisLeft.gridColor = chartGridColor
+                                    chart.invalidate()
+                                }
+                            )
+                        }
+
+                        if (selectedPoint.isNotEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 10.dp)
+                                    .background(accentColor.copy(alpha = 0.9f), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text(selectedPoint, color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+
+                // Terminal Output Card
+                Card(
+                    modifier = Modifier.weight(0.3f).fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = terminalBg),
+                    border = BorderStroke(1.dp, borderColor)
+                ) {
+                    Box(modifier = Modifier.padding(8.dp).fillMaxSize()) {
+                        // خروجی ترمینال همیشه LTR باشد
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            Text(
+                                text = if(terminalOutput.isEmpty()) "// Output logs..." else terminalOutput,
+                                color = if(terminalOutput.isEmpty()) Color.Gray else terminalTextColor,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                modifier = Modifier.verticalScroll(scrollState)
+                            )
+                        }
+                    }
+                }
+
+                // Input Area
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(100.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .background(cardColor, RoundedCornerShape(12.dp))
+                            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+                            .padding(12.dp)
+                    ) {
+                        if (terminalInput.isEmpty()) {
+                            Text(if(isFa) "کد پایتون..." else "Code here...", color = Color.Gray, fontSize = 12.sp)
+                        }
+                        // ورودی متن همیشه LTR
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            BasicTextField(
+                                value = terminalInput,
+                                onValueChange = { terminalInput = it },
+                                textStyle = TextStyle(
+                                    color = textColor,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 13.sp
+                                ),
+                                cursorBrush = SolidColor(accentColor),
+                                singleLine = false,
+                                keyboardOptions = KeyboardOptions.Default,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = { sendCommand() },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = accentColor),
+                        modifier = Modifier.width(70.dp).fillMaxHeight()
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(24.dp))
+                            Text(if(isFa) "اجرا" else "RUN", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }

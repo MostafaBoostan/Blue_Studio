@@ -20,10 +20,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -46,26 +48,29 @@ import java.io.File
 // رنگ ثابت برای برندینگ
 private val NeonGreen = Color(0xFF69F0AE)
 
-// اکستنشن اصلاح شده
-private val com.bluestudio.manager.model.MicroFile.isDirectory: Boolean get() = !this.isFile
+// اکستنشن برای راحتی کار
+private val MicroFile.isDirectory: Boolean get() = !this.isFile
 
 @Composable
 fun FilesExplorerScreen(
-    viewModel: com.bluestudio.manager.MainViewModel,
-    terminalManager: com.bluestudio.manager.managers.TerminalManager,
-    filesManager: com.bluestudio.manager.managers.FilesManager?,
-    openTerminal: (com.bluestudio.manager.model.MicroScript) -> Unit,
-    openEditor: (com.bluestudio.manager.model.MicroScript) -> Unit,
+    viewModel: MainViewModel,
+    terminalManager: TerminalManager,
+    filesManager: FilesManager?,
+    openTerminal: (MicroScript) -> Unit,
+    openEditor: (MicroScript) -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
     val root by remember { viewModel.root }
     val coroutineScope = rememberCoroutineScope()
     val files = viewModel.files.collectAsState()
-    var selectedFile by remember { mutableStateOf<com.bluestudio.manager.model.MicroFile?>(null) }
+    var selectedFile by remember { mutableStateOf<MicroFile?>(null) }
 
-    // دریافت وضعیت تم
+    // دریافت وضعیت تم و زبان
     val isDarkMode by viewModel.isDarkMode.collectAsState()
+    val currentLanguage by viewModel.currentLanguage.collectAsState()
+    val isFa = currentLanguage == "fa"
+    val layoutDirection = if (isFa) LayoutDirection.Rtl else LayoutDirection.Ltr
 
     // تعریف رنگ‌های داینامیک
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
@@ -73,14 +78,14 @@ fun FilesExplorerScreen(
     val textColor = if (isDarkMode) Color(0xFFEEEEEE) else Color(0xFF121212)
     val textGray = if (isDarkMode) Color(0xFFB0BEC5) else Color(0xFF757575)
 
-    val importScriptDialog =
-        _root_ide_package_.com.bluestudio.manager.ui.components.rememberMyDialogState()
-    val deleteFileDialog =
-        _root_ide_package_.com.bluestudio.manager.ui.components.rememberMyDialogState()
-    val createFileDialog =
-        _root_ide_package_.com.bluestudio.manager.ui.components.rememberMyDialogState()
-    val renameFileDialog =
-        _root_ide_package_.com.bluestudio.manager.ui.components.rememberMyDialogState()
+    // متون لوکالایز شده
+    val savedToastMsg = if (isFa) "ذخیره شد در" else "Saved to"
+    val refreshToastMsg = if (isFa) "لیست بروزرسانی شد" else "Refreshed"
+
+    val importScriptDialog = rememberMyDialogState()
+    val deleteFileDialog = rememberMyDialogState()
+    val createFileDialog = rememberMyDialogState()
+    val renameFileDialog = rememberMyDialogState()
 
     val isMicroPython = viewModel.microDevice?.isMicroPython == true
     val filesPicker = rememberFilesPickerResult()
@@ -102,23 +107,23 @@ fun FilesExplorerScreen(
 
     BackHandler { onUp() }
 
-    fun onRun(file: com.bluestudio.manager.model.MicroFile) {
+    fun onRun(file: MicroFile) {
         filesManager?.read(file.fullPath, onRead = { content ->
-            val script = _root_ide_package_.com.bluestudio.manager.model.MicroScript(
+            val script = MicroScript(
                 path = file.fullPath,
                 content = content,
-                editorMode = _root_ide_package_.com.bluestudio.manager.model.EditorMode.REMOTE
+                editorMode = EditorMode.REMOTE
             )
             coroutineScope.launch { openTerminal(script) }
         })
     }
 
-    fun onEdit(file: com.bluestudio.manager.model.MicroFile) {
+    fun onEdit(file: MicroFile) {
         filesManager?.read(file.fullPath, onRead = { content ->
-            val script = _root_ide_package_.com.bluestudio.manager.model.MicroScript(
+            val script = MicroScript(
                 path = file.fullPath,
                 content = content,
-                editorMode = _root_ide_package_.com.bluestudio.manager.model.EditorMode.REMOTE
+                editorMode = EditorMode.REMOTE
             )
             coroutineScope.launch { openEditor(script) }
         })
@@ -132,24 +137,24 @@ fun FilesExplorerScreen(
                 coroutineScope.launch {
                     filesManager.listDir()
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Saved to $root", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "$savedToastMsg $root", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
         )
     }
 
-    fun onOpenFolder(file: com.bluestudio.manager.model.MicroFile) {
+    fun onOpenFolder(file: MicroFile) {
         viewModel.root.value = file.fullPath
         filesManager?.listDir(file.fullPath)
     }
 
     fun onRefresh() {
-        Toast.makeText(context, context.getText(R.string.explorer_refresh), Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, refreshToastMsg, Toast.LENGTH_SHORT).show()
         filesManager?.listDir()
     }
 
-    _root_ide_package_.com.bluestudio.manager.screens.dialogs.FileDeleteDialog(
+    FileDeleteDialog(
         state = deleteFileDialog,
         name = { selectedFile?.name.orEmpty() },
         onOk = { filesManager?.remove(selectedFile!!) }
@@ -161,63 +166,68 @@ fun FilesExplorerScreen(
         onOk = { file -> filesManager?.new(file) }
     )
 
-    _root_ide_package_.com.bluestudio.manager.screens.dialogs.FileRenameDialog(
+    FileRenameDialog(
         state = renameFileDialog,
         name = { selectedFile?.name.orEmpty() },
         onOk = { newName ->
-            val dst = _root_ide_package_.com.bluestudio.manager.model.MicroFile(
+            val dst = MicroFile(
                 name = newName,
                 path = selectedFile!!.path,
-                type = if (selectedFile!!.isFile) _root_ide_package_.com.bluestudio.manager.model.MicroFile.Companion.FILE else _root_ide_package_.com.bluestudio.manager.model.MicroFile.Companion.DIRECTORY
+                type = if (selectedFile!!.isFile) MicroFile.FILE else MicroFile.DIRECTORY
             )
             filesManager?.rename(src = selectedFile!!, dst = dst)
         }
     )
 
-    _root_ide_package_.com.bluestudio.manager.screens.dialogs.ImportScriptDialog(
+    ImportScriptDialog(
         state = importScriptDialog,
         onOk = { filesPicker.pickFile(::importFile) }
     )
 
-    ExplorerScreenContent(
-        files = { files.value },
-        root = { root },
-        isMicroPython = isMicroPython,
-        bgColor = bgColor,
-        cardBg = cardBg,
-        textColor = textColor,
-        textGray = textGray,
-        uiEvents = { event ->
-            when (event) {
-                is ExplorerEvents.OpenFolder -> onOpenFolder(event.file)
-                is ExplorerEvents.Edit -> onEdit(event.file)
-                is ExplorerEvents.Run -> onRun(event.file)
-                is ExplorerEvents.Refresh -> onRefresh()
-                is ExplorerEvents.Up -> onUp()
-                is ExplorerEvents.Import -> importScriptDialog.show()
-                is ExplorerEvents.Export -> { }
-                is ExplorerEvents.Rename -> {
-                    selectedFile = event.file
-                    renameFileDialog.show()
-                }
-                is ExplorerEvents.Remove -> {
-                    selectedFile = event.file
-                    deleteFileDialog.show()
-                }
-                is ExplorerEvents.New -> {
-                    selectedFile = event.file
-                    createFileDialog.show()
+    // اعمال جهت (RTL/LTR)
+    CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
+        ExplorerScreenContent(
+            files = { files.value },
+            root = { root },
+            isMicroPython = isMicroPython,
+            isFa = isFa, // ارسال وضعیت زبان
+            bgColor = bgColor,
+            cardBg = cardBg,
+            textColor = textColor,
+            textGray = textGray,
+            uiEvents = { event ->
+                when (event) {
+                    is ExplorerEvents.OpenFolder -> onOpenFolder(event.file)
+                    is ExplorerEvents.Edit -> onEdit(event.file)
+                    is ExplorerEvents.Run -> onRun(event.file)
+                    is ExplorerEvents.Refresh -> onRefresh()
+                    is ExplorerEvents.Up -> onUp()
+                    is ExplorerEvents.Import -> importScriptDialog.show()
+                    is ExplorerEvents.Export -> { }
+                    is ExplorerEvents.Rename -> {
+                        selectedFile = event.file
+                        renameFileDialog.show()
+                    }
+                    is ExplorerEvents.Remove -> {
+                        selectedFile = event.file
+                        deleteFileDialog.show()
+                    }
+                    is ExplorerEvents.New -> {
+                        selectedFile = event.file
+                        createFileDialog.show()
+                    }
                 }
             }
-        }
-    )
+        )
+    }
 }
 
 @Composable
 fun ExplorerScreenContent(
-    files: () -> List<com.bluestudio.manager.model.MicroFile>,
+    files: () -> List<MicroFile>,
     root: () -> String,
     isMicroPython: Boolean,
+    isFa: Boolean,
     bgColor: Color,
     cardBg: Color,
     textColor: Color,
@@ -229,6 +239,7 @@ fun ExplorerScreenContent(
         topBar = {
             ExplorerTopBar(
                 currentPath = root(),
+                isFa = isFa,
                 cardBg = cardBg,
                 textColor = textColor,
                 textGray = textGray,
@@ -239,10 +250,10 @@ fun ExplorerScreenContent(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { uiEvents(ExplorerEvents.New(
-                    _root_ide_package_.com.bluestudio.manager.model.MicroFile(
+                    MicroFile(
                         root(),
                         "",
-                        _root_ide_package_.com.bluestudio.manager.model.MicroFile.Companion.FILE
+                        MicroFile.FILE
                     )
                 )) },
                 containerColor = NeonGreen,
@@ -260,7 +271,7 @@ fun ExplorerScreenContent(
             val fileList = files()
 
             if (fileList.isEmpty()) {
-                EmptyStateView(cardBg, textGray)
+                EmptyStateView(isFa, cardBg, textGray)
             } else {
                 LazyColumn(
                     contentPadding = PaddingValues(16.dp),
@@ -270,6 +281,7 @@ fun ExplorerScreenContent(
                         FileItemView(
                             file = file,
                             isMicroPython = isMicroPython,
+                            isFa = isFa,
                             cardBg = cardBg,
                             textColor = textColor,
                             textGray = textGray,
@@ -289,6 +301,7 @@ fun ExplorerScreenContent(
 @Composable
 fun ExplorerTopBar(
     currentPath: String,
+    isFa: Boolean,
     cardBg: Color,
     textColor: Color,
     textGray: Color,
@@ -309,6 +322,7 @@ fun ExplorerTopBar(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             IconButton(onClick = onBack) {
+                // آیکون ArrowBack در حالت RTL خودکار می‌چرخد
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Back",
@@ -316,7 +330,7 @@ fun ExplorerTopBar(
                 )
             }
             Text(
-                text = "File Manager",
+                text = if (isFa) "مدیریت فایل" else "File Manager",
                 style = androidx.compose.ui.text.TextStyle(
                     color = textColor,
                     fontWeight = FontWeight.Bold,
@@ -350,29 +364,34 @@ fun ExplorerTopBar(
                 modifier = Modifier.size(20.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = currentPath.ifEmpty { "/" },
-                color = NeonGreen,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+
+            // مهم: مسیر فایل همیشه باید چپ‌چین (LTR) باشد تا اسلش‌ها درست نمایش داده شوند
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Text(
+                    text = currentPath.ifEmpty { "/" },
+                    color = NeonGreen,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
 
 @Composable
 fun FileItemView(
-    file: com.bluestudio.manager.model.MicroFile,
+    file: MicroFile,
     isMicroPython: Boolean,
+    isFa: Boolean,
     cardBg: Color,
     textColor: Color,
     textGray: Color,
-    onFolderClick: (com.bluestudio.manager.model.MicroFile) -> Unit,
-    onFileClick: (com.bluestudio.manager.model.MicroFile) -> Unit,
-    onRun: (com.bluestudio.manager.model.MicroFile) -> Unit,
-    onRename: (com.bluestudio.manager.model.MicroFile) -> Unit,
-    onDelete: (com.bluestudio.manager.model.MicroFile) -> Unit
+    onFolderClick: (MicroFile) -> Unit,
+    onFileClick: (MicroFile) -> Unit,
+    onRun: (MicroFile) -> Unit,
+    onRename: (MicroFile) -> Unit,
+    onDelete: (MicroFile) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -409,15 +428,18 @@ fun FileItemView(
         Spacer(modifier = Modifier.width(16.dp))
 
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = file.name,
-                color = textColor,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 16.sp,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            // نام فایل باید همیشه LTR باشد
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Text(
+                    text = file.name,
+                    color = textColor,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 16.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
 
         if (file.isFile && (file.name.endsWith(".py") || file.name.endsWith(".txt")) && isMicroPython) {
@@ -439,6 +461,7 @@ fun FileItemView(
                 )
             }
 
+            // منوها راست‌چین می‌شوند (اگر زبان فارسی باشد)
             DropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
@@ -447,7 +470,7 @@ fun FileItemView(
             ) {
                 if (file.isFile) {
                     DropdownMenuItem(
-                        text = { Text("Edit", color = textColor) },
+                        text = { Text(if (isFa) "ویرایش" else "Edit", color = textColor) },
                         onClick = {
                             expanded = false
                             onFileClick(file)
@@ -460,7 +483,7 @@ fun FileItemView(
                 }
 
                 DropdownMenuItem(
-                    text = { Text("Rename", color = textColor) },
+                    text = { Text(if (isFa) "تغییر نام" else "Rename", color = textColor) },
                     onClick = {
                         expanded = false
                         onRename(file)
@@ -471,7 +494,7 @@ fun FileItemView(
                 )
 
                 DropdownMenuItem(
-                    text = { Text("Delete", color = Color(0xFFFF5252)) },
+                    text = { Text(if (isFa) "حذف" else "Delete", color = Color(0xFFFF5252)) },
                     onClick = {
                         expanded = false
                         onDelete(file)
@@ -486,7 +509,7 @@ fun FileItemView(
 }
 
 @Composable
-fun EmptyStateView(cardBg: Color, textGray: Color) {
+fun EmptyStateView(isFa: Boolean, cardBg: Color, textGray: Color) {
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.Center,
@@ -508,7 +531,7 @@ fun EmptyStateView(cardBg: Color, textGray: Color) {
         }
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "Directory is empty",
+            text = if (isFa) "پوشه خالی است" else "Directory is empty",
             color = textGray,
             fontSize = 16.sp,
             fontFamily = FontFamily.Monospace

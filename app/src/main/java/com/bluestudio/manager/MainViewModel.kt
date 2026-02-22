@@ -5,22 +5,16 @@ import android.content.Context
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 import com.bluestudio.manager.managers.BoardManager
 import com.bluestudio.manager.managers.TerminalHistoryManager
 import com.bluestudio.manager.model.ConnectionStatus
 import com.bluestudio.manager.model.MicroDevice
 import com.bluestudio.manager.model.MicroFile
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import java.util.UUID
 
 // دیتا کلاس ماکرو
@@ -32,21 +26,32 @@ data class Macro(
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    // آماده‌سازی ابزارهای ذخیره‌سازی
+    // --- آماده‌سازی ابزارهای ذخیره‌سازی ---
     private val prefs = application.getSharedPreferences("micro_repl_prefs", Context.MODE_PRIVATE)
     private val gson = Gson()
+
+    // کلیدهای ذخیره‌سازی
     private val MACROS_KEY = "saved_macros_list"
+    private val DARK_MODE_KEY = "dark_mode"
+    private val FONT_SCALE_KEY = "font_scale"
+    private val LANGUAGE_KEY = "app_language"
 
-    val status = MutableStateFlow<com.bluestudio.manager.model.ConnectionStatus>(_root_ide_package_.com.bluestudio.manager.model.ConnectionStatus.Connecting)
-    val microDevice: com.bluestudio.manager.model.MicroDevice? get() = (status.value as? com.bluestudio.manager.model.ConnectionStatus.Connected)?.microDevice
+    // --- وضعیت اتصال ---
+    val status = MutableStateFlow<ConnectionStatus>(ConnectionStatus.Connecting)
 
+    // دسترسی سریع به دستگاه متصل (اگر متصل باشد)
+    val microDevice: MicroDevice?
+        get() = (status.value as? ConnectionStatus.Connected)?.microDevice
+
+    // --- فایل منیجر و ترمینال ---
     val root = mutableStateOf("/")
-    val files = MutableStateFlow<List<com.bluestudio.manager.model.MicroFile>>(listOf())
+    val files = MutableStateFlow<List<MicroFile>>(emptyList())
 
     val terminalInput = mutableStateOf("")
     val terminalOutput = mutableStateOf("")
-    val history = _root_ide_package_.com.bluestudio.manager.managers.TerminalHistoryManager()
+    val history = TerminalHistoryManager()
 
+    // --- Pro Mode (تشخیص دستگاه خاص) ---
     private val _navigateToPro = MutableSharedFlow<Boolean>()
     val navigateToPro = _navigateToPro.asSharedFlow()
 
@@ -56,7 +61,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isProMode = _proDeviceId.map { it.isNotEmpty() && it != "Basic" && it != "Unknown" }
         .stateIn(viewModelScope, SharingStarted.Lazily, false)
 
-    // *** مدیریت ماکروها با قابلیت ذخیره‌سازی ***
+    // --- مدیریت ماکروها ---
     private val _macros = MutableStateFlow<List<Macro>>(loadMacrosFromStorage())
     val macros = _macros.asStateFlow()
 
@@ -65,7 +70,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             add(Macro(name = name, command = command))
         }
         _macros.value = newList
-        saveMacrosToStorage(newList) // ذخیره فوری
+        saveMacrosToStorage(newList)
     }
 
     fun removeMacro(macro: Macro) {
@@ -73,15 +78,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             remove(macro)
         }
         _macros.value = newList
-        saveMacrosToStorage(newList) // ذخیره فوری
+        saveMacrosToStorage(newList)
     }
 
-    // تابع بارگذاری ماکروها از حافظه گوشی
     private fun loadMacrosFromStorage(): List<Macro> {
         val json = prefs.getString(MACROS_KEY, null)
         return if (json != null) {
             try {
-                val type = object : com.google.gson.reflect.TypeToken<List<Macro>>() {}.type
+                val type = object : TypeToken<List<Macro>>() {}.type
                 gson.fromJson(json, type)
             } catch (e: Exception) {
                 getDefaultMacros()
@@ -91,22 +95,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // تابع ذخیره ماکروها در حافظه گوشی
     private fun saveMacrosToStorage(list: List<Macro>) {
         val json = gson.toJson(list)
         prefs.edit().putString(MACROS_KEY, json).apply()
     }
 
-    // لیست پیش‌فرض برای بار اول
     private fun getDefaultMacros(): List<Macro> {
         return listOf(
-            Macro(name = "LED 1 On", command = "pyb.LED(1).on()"),
-            Macro(name = "LED 1 Off", command = "pyb.LED(1).off()"),
-            Macro(name = "LED 2 Blink", command = "pyb.LED(2).on(); pyb.delay(200); pyb.LED(2).off()")
+            Macro(name = "LED On", command = "import machine; machine.Pin(2, machine.Pin.OUT).on()"),
+            Macro(name = "LED Off", command = "import machine; machine.Pin(2, machine.Pin.OUT).off()"),
+            Macro(name = "Hello", command = "print('Hello from BlueStudio')")
         )
     }
 
-    // *******************************************
+    // --- توابع مربوط به اتصال و شناسایی ---
 
     fun triggerProMode(idName: String) {
         _proDeviceId.value = idName
@@ -119,12 +121,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _proDeviceId.value = ""
     }
 
-    fun onDeviceConnected(boardManager: com.bluestudio.manager.managers.BoardManager) {
+    fun onDeviceConnected(boardManager: BoardManager) {
         viewModelScope.launch {
             delay(300)
-            if (status.value is com.bluestudio.manager.model.ConnectionStatus.Connected) {
+            if (status.value is ConnectionStatus.Connected) {
                 try {
-                    val cleanCommand = "\u0003\u0003\r\nprint('#ID:' + BlueCore.DEVICE_ID)\r\n"
+                    // ارسال دستور برای گرفتن ID دستگاه (بدون نمایش در خروجی کاربر)
+                    val cleanCommand = "\u0003\u0003\r\nprint('#ID:' + getattr(BlueCore, 'DEVICE_ID', 'Basic'))\r\n"
                     boardManager.writeCommand(cleanCommand)
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -133,19 +136,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private val _isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", true))
+    // --- تنظیمات (Settings) ---
+
+    // 1. Dark Mode
+    private val _isDarkMode = MutableStateFlow(prefs.getBoolean(DARK_MODE_KEY, true))
     val isDarkMode = _isDarkMode.asStateFlow()
 
     fun setDarkMode(enable: Boolean) {
         _isDarkMode.value = enable
-        prefs.edit().putBoolean("dark_mode", enable).apply()
+        prefs.edit().putBoolean(DARK_MODE_KEY, enable).apply()
     }
 
-    private val _fontScale = MutableStateFlow(prefs.getFloat("font_scale", 1.0f))
+    // 2. Font Scale
+    private val _fontScale = MutableStateFlow(prefs.getFloat(FONT_SCALE_KEY, 1.0f))
     val fontScale = _fontScale.asStateFlow()
 
     fun setFontScale(scale: Float) {
         _fontScale.value = scale
-        prefs.edit().putFloat("font_scale", scale).apply()
+        prefs.edit().putFloat(FONT_SCALE_KEY, scale).apply()
+    }
+
+    // 3. Language (زبان) - کامل شده با قابلیت ذخیره
+    private val _currentLanguage = MutableStateFlow(prefs.getString(LANGUAGE_KEY, "en") ?: "en")
+    val currentLanguage: StateFlow<String> = _currentLanguage.asStateFlow()
+
+    fun setLanguage(lang: String) {
+        _currentLanguage.value = lang
+        // ذخیره در حافظه تا بعد از بستن برنامه زبان نپرد
+        prefs.edit().putString(LANGUAGE_KEY, lang).apply()
     }
 }

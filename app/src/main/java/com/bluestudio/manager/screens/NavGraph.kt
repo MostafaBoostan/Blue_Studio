@@ -13,7 +13,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
-import com.bluestudio.manager.model.asMicroScript
 import com.bluestudio.manager.AppRoutes
 import com.bluestudio.manager.MainViewModel
 import com.bluestudio.manager.managers.BoardManager
@@ -37,10 +36,10 @@ import com.bluestudio.manager.screens.terminal.TerminalScreen
 
 @Composable
 fun RootGraph(
-    viewModel: com.bluestudio.manager.MainViewModel,
-    boardManager: com.bluestudio.manager.managers.BoardManager,
-    filesManager: com.bluestudio.manager.managers.FilesManager,
-    terminalManager: com.bluestudio.manager.managers.TerminalManager,
+    viewModel: MainViewModel,
+    boardManager: BoardManager,
+    filesManager: FilesManager,
+    terminalManager: TerminalManager,
     navController: NavHostController = rememberNavController(),
 ) {
     var canRun by remember { mutableStateOf(false) }
@@ -49,11 +48,11 @@ fun RootGraph(
 
     LaunchedEffect(Unit) {
         viewModel.status.collect { status ->
-            if (status is com.bluestudio.manager.model.ConnectionStatus.Connected) {
+            if (status is ConnectionStatus.Connected) {
                 canRun = true
             } else {
                 canRun = false
-                if (status !is com.bluestudio.manager.model.ConnectionStatus.Connecting) {
+                if (status !is ConnectionStatus.Connecting) {
                     viewModel.resetProMode()
                     if (navController.previousBackStackEntry != null) {
                         navController.navigate(AppRoutes.Home) {
@@ -81,7 +80,7 @@ fun RootGraph(
         startDestination = AppRoutes.Home
     ) {
         composable<AppRoutes.Home> {
-            _root_ide_package_.com.bluestudio.manager.screens.home.HomeScreen(
+            HomeScreen(
                 viewModel = viewModel,
                 boardManager = boardManager,
                 terminalManager = terminalManager,
@@ -99,7 +98,7 @@ fun RootGraph(
         }
 
         composable<AppRoutes.Joystick> {
-            _root_ide_package_.com.bluestudio.manager.screens.joystick.JoystickScreen(
+            JoystickScreen(
                 viewModel = viewModel,
                 terminalManager = terminalManager,
                 onBack = { navController.popBackStack() }
@@ -107,7 +106,7 @@ fun RootGraph(
         }
 
         composable<AppRoutes.Plotter> {
-            _root_ide_package_.com.bluestudio.manager.screens.plotter.PlotterScreen(
+            PlotterScreen(
                 viewModel = viewModel,
                 terminalManager = terminalManager,
                 onBack = { navController.popBackStack() }
@@ -115,7 +114,7 @@ fun RootGraph(
         }
 
         composable<AppRoutes.Logger> {
-            _root_ide_package_.com.bluestudio.manager.screens.logger.LoggerScreen(
+            LoggerScreen(
                 viewModel = viewModel,
                 terminalManager = terminalManager,
                 onBack = { navController.popBackStack() }
@@ -123,7 +122,7 @@ fun RootGraph(
         }
 
         composable<AppRoutes.Macros> {
-            _root_ide_package_.com.bluestudio.manager.screens.macros.MacrosScreen(
+            MacrosScreen(
                 viewModel = viewModel,
                 boardManager = boardManager,
                 onBack = { navController.popBackStack() }
@@ -132,9 +131,8 @@ fun RootGraph(
 
         composable<AppRoutes.Terminal> { backStackEntry ->
             val terminal: AppRoutes.Terminal = backStackEntry.toRoute()
-            // *** اصلاح شده: استفاده از الویس اپراتور (?:) برای هندل کردن مقدار نال ***
             val microScript = remember { (terminal.script ?: "").asMicroScript() }
-            _root_ide_package_.com.bluestudio.manager.screens.terminal.TerminalScreen(
+            TerminalScreen(
                 microScript = microScript,
                 viewModel = viewModel,
                 terminalManager = terminalManager,
@@ -145,14 +143,13 @@ fun RootGraph(
 
         composable<AppRoutes.Editor> { backStackEntry ->
             val editor: AppRoutes.Editor = backStackEntry.toRoute()
-            // *** اصلاح شده برای ادیتور هم (محض احتیاط) ***
             val editorState = remember {
-                _root_ide_package_.com.bluestudio.manager.model.EditorState(
+                EditorState(
                     (editor.script ?: "").asMicroScript(),
                     editor.blank
                 )
             }
-            _root_ide_package_.com.bluestudio.manager.screens.editor.EditorScreen(
+            EditorScreen(
                 viewModel = viewModel,
                 canRun = { canRun },
                 editorState = editorState,
@@ -163,7 +160,7 @@ fun RootGraph(
         }
 
         composable<AppRoutes.Explorer> {
-            _root_ide_package_.com.bluestudio.manager.screens.explorer.FilesExplorerScreen(
+            FilesExplorerScreen(
                 filesManager = filesManager,
                 viewModel = viewModel,
                 terminalManager = terminalManager,
@@ -180,7 +177,7 @@ fun RootGraph(
         }
 
         composable<AppRoutes.Scripts> {
-            _root_ide_package_.com.bluestudio.manager.screens.scripts.ScriptsScreen(
+            ScriptsScreen(
                 viewModel = viewModel,
                 onOpenLocalScript = { microScript ->
                     navController.navigate(
@@ -195,21 +192,22 @@ fun RootGraph(
         }
 
         composable<AppRoutes.Flash> {
-            _root_ide_package_.com.bluestudio.manager.screens.flash.FlashScreen(
+            FlashScreen(
                 viewModel = viewModel,
                 boardManager = boardManager
             )
         }
 
         composable<AppRoutes.Settings> {
-            _root_ide_package_.com.bluestudio.manager.screens.settings.SettingsScreen(
+            SettingsScreen(
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() }
             )
         }
 
         composable<AppRoutes.BlueStudioPro> {
-            _root_ide_package_.com.bluestudio.manager.screens.pro.BlueStudioProScreen(
+            BlueStudioProScreen(
+                viewModel = viewModel,
                 deviceIdName = proDeviceIdName,
                 onFinished = {
                     navController.navigate(AppRoutes.Home) {

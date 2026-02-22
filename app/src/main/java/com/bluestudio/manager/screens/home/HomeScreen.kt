@@ -28,8 +28,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -46,9 +48,9 @@ private const val APP_CONFIG_URL = "https://bluewaverobotics.ir/app_config.json"
 
 @Composable
 fun HomeScreen(
-    viewModel: com.bluestudio.manager.MainViewModel,
-    boardManager: com.bluestudio.manager.managers.BoardManager?,
-    terminalManager: com.bluestudio.manager.managers.TerminalManager?,
+    viewModel: MainViewModel,
+    boardManager: BoardManager?,
+    terminalManager: TerminalManager?,
     openTerminal: () -> Unit,
     openEditor: () -> Unit,
     openScripts: () -> Unit,
@@ -66,6 +68,10 @@ fun HomeScreen(
     val isDarkMode by viewModel.isDarkMode.collectAsState()
     val isProMode by viewModel.isProMode.collectAsState()
     val proName by viewModel.proDeviceId.collectAsState()
+    val currentLanguage by viewModel.currentLanguage.collectAsState()
+
+    val layoutDirection = if (currentLanguage == "fa") LayoutDirection.Rtl else LayoutDirection.Ltr
+    val isFa = currentLanguage == "fa"
 
     val bgColor = if (isProMode) Color.Transparent else if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val itemBg = if (isDarkMode) Color(0xFF252525) else Color(0xFFFFFFFF)
@@ -74,13 +80,15 @@ fun HomeScreen(
     val proHeaderColor = if (isDarkMode) Color.Cyan else Color(0xFF0D47A1)
 
     val status by viewModel.status.collectAsState()
-    val isConnected = status is com.bluestudio.manager.model.ConnectionStatus.Connected
-    val isConnecting = status is com.bluestudio.manager.model.ConnectionStatus.Connecting
-    val deviceName = if (isConnected) viewModel.microDevice?.usbDevice?.productName ?: "Unknown Device" else "No Device"
+    val isConnected = status is ConnectionStatus.Connected
+    val isConnecting = status is ConnectionStatus.Connecting
+
+    val deviceNameText = if (isConnected) viewModel.microDevice?.usbDevice?.productName ?: (if (isFa) "دستگاه ناشناس" else "Unknown Device") else (if (isFa) "بدون دستگاه" else "No Device")
+
     val statusText = when(status) {
-        is com.bluestudio.manager.model.ConnectionStatus.Connected -> "Connected"
-        is com.bluestudio.manager.model.ConnectionStatus.Connecting -> "Connecting..."
-        else -> "Disconnected"
+        is ConnectionStatus.Connected -> if (isFa) "متصل" else "Connected"
+        is ConnectionStatus.Connecting -> if (isFa) "در حال اتصال..." else "Connecting..."
+        else -> if (isFa) "قطع" else "Disconnected"
     }
 
     fun onConnectClick() {
@@ -90,15 +98,17 @@ fun HomeScreen(
     fun onSoftReset() {
         if (isConnected) {
             terminalManager?.softResetDevice {
-                activity.runOnUiThread { Toast.makeText(activity, "Soft Reset Sent (Ctrl+D)", Toast.LENGTH_SHORT).show() }
+                activity.runOnUiThread {
+                    Toast.makeText(activity, if (isFa) "ریست نرم انجام شد (Ctrl+D)" else "Soft Reset Sent (Ctrl+D)", Toast.LENGTH_SHORT).show()
+                }
             }
         } else {
-            Toast.makeText(activity, "Not Connected", Toast.LENGTH_SHORT).show()
+            Toast.makeText(activity, if (isFa) "متصل نیستید" else "Not Connected", Toast.LENGTH_SHORT).show()
         }
     }
 
     fun onHelp() {
-        Toast.makeText(activity, "Fetching Documentation...", Toast.LENGTH_SHORT).show()
+        Toast.makeText(activity, if (isFa) "دریافت مستندات..." else "Fetching Documentation...", Toast.LENGTH_SHORT).show()
         coroutineScope.launch(Dispatchers.IO) {
             try {
                 val configUrl = URL("$APP_CONFIG_URL?t=${System.currentTimeMillis()}")
@@ -123,9 +133,9 @@ fun HomeScreen(
     }
 
     val connectTitle = when {
-        isConnecting -> "Wait..."
-        isConnected -> "Disconnect"
-        else -> "Connect"
+        isConnecting -> if (isFa) "صبر کنید..." else "Wait..."
+        isConnected -> if (isFa) "قطع اتصال" else "Disconnect"
+        else -> if (isFa) "اتصال" else "Connect"
     }
 
     val connectColor = when {
@@ -134,105 +144,116 @@ fun HomeScreen(
         else -> Color(0xFF448AFF)
     }
 
+    val connectDesc = if (isConnecting) (if (isFa) "پردازش..." else "Processing...") else (if (isFa) "USB و بلوتوث" else "USB & Bluetooth")
+    val connectMsg = if (isFa) "ابتدا متصل شوید!" else "Connect First!"
+
     val menuItems = listOf(
-        MenuItem(connectTitle, if (isConnecting) "Processing..." else "USB & Bluetooth", if (isConnected) Icons.Default.Close else Icons.Default.Add, connectColor) { onConnectClick() },
-        MenuItem("Terminal", "REPL Access", Icons.Default.List, if (isConnected) Color(0xFF69F0AE) else Color.Gray) { if (isConnected) openTerminal() else Toast.makeText(activity, "Connect First!", Toast.LENGTH_SHORT).show() },
-        MenuItem("File Manager", "Internal & SD", Icons.Default.Home, if (isConnected) Color(0xFFFFAB40) else Color.Gray) { if (isConnected) openExplorer() else Toast.makeText(activity, "Connect First!", Toast.LENGTH_SHORT).show() },
-        MenuItem("Scripts", "Run .py scripts", Icons.Default.Edit, Color(0xFFE040FB)) { openScripts() },
-        MenuItem("Firmware", "Flash .dfu file", Icons.Default.Build, Color(0xFF00E5FF)) { openFlasher() },
-        MenuItem("Soft Reset", "CTRL + D", Icons.Default.Refresh, Color(0xFFFF5252)) { onSoftReset() },
-        MenuItem("Settings", "App Config", Icons.Default.Settings, Color(0xFFFF4081)) { openSettings() },
-        MenuItem("Help", "Documentation", Icons.Default.Info, Color(0xFF64FFDA)) { onHelp() }
+        MenuItem(connectTitle, connectDesc, if (isConnected) Icons.Default.Close else Icons.Default.Add, connectColor) { onConnectClick() },
+        MenuItem(if (isFa) "ترمینال" else "Terminal", if (isFa) "دسترسی REPL" else "REPL Access", Icons.Default.List, if (isConnected) Color(0xFF69F0AE) else Color.Gray) { if (isConnected) openTerminal() else Toast.makeText(activity, connectMsg, Toast.LENGTH_SHORT).show() },
+        MenuItem(if (isFa) "مدیریت فایل" else "File Manager", if (isFa) "داخلی و SD" else "Internal & SD", Icons.Default.Home, if (isConnected) Color(0xFFFFAB40) else Color.Gray) { if (isConnected) openExplorer() else Toast.makeText(activity, connectMsg, Toast.LENGTH_SHORT).show() },
+        MenuItem(if (isFa) "اسکریپت‌ها" else "Scripts", if (isFa) "اجرای اسکریپت .py" else "Run .py scripts", Icons.Default.Edit, Color(0xFFE040FB)) { openScripts() },
+        MenuItem(if (isFa) "فریم‌ور" else "Firmware", if (isFa) "فلش فایل .dfu" else "Flash .dfu file", Icons.Default.Build, Color(0xFF00E5FF)) { openFlasher() },
+        MenuItem(if (isFa) "ریست نرم" else "Soft Reset", "CTRL + D", Icons.Default.Refresh, Color(0xFFFF5252)) { onSoftReset() },
+        MenuItem(if (isFa) "تنظیمات" else "Settings", if (isFa) "پیکربندی برنامه" else "App Config", Icons.Default.Settings, Color(0xFFFF4081)) { openSettings() },
+        MenuItem(if (isFa) "راهنما" else "Help", if (isFa) "مستندات" else "Documentation", Icons.Default.Info, Color(0xFF64FFDA)) { onHelp() }
     )
 
-    Scaffold(
-        containerColor = Color.Transparent,
-        topBar = {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(16.dp).statusBarsPadding(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = if(isProMode) "BLUE CORE PRO" else "MicroBluePy Manager",
-                    color = if(isProMode) proHeaderColor else textColor,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                StatusPill(isConnected)
-            }
-        }
-    ) { padding ->
-        Box(modifier = Modifier.fillMaxSize()) {
-            if (isProMode) {
-                val brush = if (isDarkMode) Brush.verticalGradient(listOf(Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364))) else Brush.verticalGradient(listOf(Color(0xFFE3F2FD), Color(0xFFBBDEFB), Color(0xFF90CAF9)))
-                Box(modifier = Modifier.fillMaxSize().background(brush))
-            } else {
-                Box(modifier = Modifier.fillMaxSize().background(bgColor))
-            }
-
-            Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(15.dp),
-                    horizontalArrangement = Arrangement.spacedBy(15.dp),
-                    contentPadding = PaddingValues(bottom = 16.dp)
+    CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp).statusBarsPadding(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    item(span = { GridItemSpan(2) }) {
-                        Column {
-                            Box(
-                                modifier = Modifier.fillMaxWidth().height(160.dp).clip(RoundedCornerShape(20.dp)).background(Color(0xFF263238)).border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(20.dp))
-                            ) {
-                                Image(
-                                    painter = painterResource(id = com.bluestudio.manager.R.drawable.header_bg),
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier.align(Alignment.CenterEnd).size(200.dp).padding(end = 8.dp).alpha(0.8f)
-                                )
+                    Text(
+                        text = if(isProMode) "BLUE CORE PRO" else (if (isFa) "مدیریت میکرو بلو پای" else "MicroBluePy Manager"),
+                        color = if(isProMode) proHeaderColor else textColor,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    StatusPill(isConnected, if (isFa) "متصل" else "Connected", if (isFa) "آفلاین" else "Offline")
+                }
+            }
+        ) { padding ->
+            Box(modifier = Modifier.fillMaxSize()) {
+                if (isProMode) {
+                    val brush = if (isDarkMode) Brush.verticalGradient(listOf(Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364))) else Brush.verticalGradient(listOf(Color(0xFFE3F2FD), Color(0xFFBBDEFB), Color(0xFF90CAF9)))
+                    Box(modifier = Modifier.fillMaxSize().background(brush))
+                } else {
+                    Box(modifier = Modifier.fillMaxSize().background(bgColor))
+                }
+
+                Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(15.dp),
+                        horizontalArrangement = Arrangement.spacedBy(15.dp),
+                        contentPadding = PaddingValues(bottom = 16.dp)
+                    ) {
+                        item(span = { GridItemSpan(2) }) {
+                            Column {
                                 Box(
-                                    modifier = Modifier.matchParentSize().background(brush = Brush.horizontalGradient(colors = listOf(Color(0xFF121212), Color(0xFF121212).copy(alpha = 0.6f), Color.Transparent)))
-                                )
-                                Column(modifier = Modifier.padding(20.dp).align(Alignment.CenterStart)) {
-                                    Text(text = if(isProMode) "PRO DEVICE DETECTED" else "TARGET DEVICE", color = if(isProMode) Color.Cyan else Color(0xFF69F0AE), fontSize = 12.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold)
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(text = if(isProMode) proName else deviceName, color = if(isProMode) Color.Yellow else Color.White, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(if(isConnected) Color.Green else Color.Red))
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(text = statusText, color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
+                                    modifier = Modifier.fillMaxWidth().height(160.dp).clip(RoundedCornerShape(20.dp)).background(Color(0xFF263238)).border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(20.dp))
+                                ) {
+                                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                        Image(
+                                            painter = painterResource(id = com.bluestudio.manager.R.drawable.header_bg),
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Fit,
+                                            modifier = Modifier.align(Alignment.CenterEnd).size(200.dp).padding(end = 8.dp).alpha(0.8f)
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier.matchParentSize().background(brush = Brush.horizontalGradient(colors = listOf(Color(0xFF121212), Color(0xFF121212).copy(alpha = 0.6f), Color.Transparent)))
+                                    )
+                                    Column(modifier = Modifier.padding(20.dp).align(Alignment.CenterStart)) {
+                                        Text(text = if(isProMode) (if(isFa) "دستگاه پرو شناسایی شد" else "PRO DEVICE DETECTED") else (if(isFa) "دستگاه هدف" else "TARGET DEVICE"), color = if(isProMode) Color.Cyan else Color(0xFF69F0AE), fontSize = 12.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                            Text(text = if(isProMode) proName else deviceNameText, color = if(isProMode) Color.Yellow else Color.White, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+                                        }
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(if(isConnected) Color.Green else Color.Red))
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(text = statusText, color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
+                                        }
                                     }
                                 }
-                            }
-                            Spacer(modifier = Modifier.height(25.dp))
-                            if (isProMode) {
-                                Text(text = "PRO TOOLS", color = proHeaderColor, fontSize = 14.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.height(10.dp))
-                            } else {
-                                Text(text = "TOOLS", color = descColor, fontSize = 14.sp, letterSpacing = 1.2.sp)
-                                Spacer(modifier = Modifier.height(0.dp))
+                                Spacer(modifier = Modifier.height(25.dp))
+                                if (isProMode) {
+                                    Text(text = if(isFa) "ابزارهای پرو" else "PRO TOOLS", color = proHeaderColor, fontSize = 14.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                } else {
+                                    Text(text = if(isFa) "ابزارها" else "TOOLS", color = descColor, fontSize = 14.sp, letterSpacing = 1.2.sp)
+                                    Spacer(modifier = Modifier.height(0.dp))
+                                }
                             }
                         }
-                    }
 
-                    if (isProMode) {
-                        item(span = { GridItemSpan(2) }) { ProHomeButton("Plotter", Color(0xFFD32F2F), isDarkMode) { openPlotter() } }
+                        if (isProMode) {
+                            item(span = { GridItemSpan(2) }) { ProHomeButton(if (isFa) "پلاتر" else "Plotter", Color(0xFFD32F2F), isDarkMode, isFa) { openPlotter() } }
+
+                            item(span = { GridItemSpan(2) }) {
+                                ProHomeButton(if (isFa) "جوی‌استیک" else "Joystick", Color(0xFF1976D2), isDarkMode, isFa) { openJoystick() }
+                            }
+
+                            item(span = { GridItemSpan(2) }) { ProHomeButton(if (isFa) "لاگر" else "Logger", Color(0xFF388E3C), isDarkMode, isFa) { openLogger() } }
+                            item(span = { GridItemSpan(2) }) { ProHomeButton(if (isFa) "ماکروها" else "Macros", Color(0xFFFBC02D), isDarkMode, isFa) { openMacros() } }
+                            item(span = { GridItemSpan(2) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = if(isDarkMode) Color.White.copy(alpha = 0.2f) else Color.Black.copy(alpha = 0.1f)) }
+                        }
+
+                        items(menuItems) { item -> MenuCard(item, itemBg, textColor, descColor) }
 
                         item(span = { GridItemSpan(2) }) {
-                            ProHomeButton("Joystick", Color(0xFF1976D2), isDarkMode) { openJoystick() }
-                        }
-
-                        item(span = { GridItemSpan(2) }) { ProHomeButton("Logger", Color(0xFF388E3C), isDarkMode) { openLogger() } }
-                        item(span = { GridItemSpan(2) }) { ProHomeButton("Macros", Color(0xFFFBC02D), isDarkMode) { openMacros() } }
-                        item(span = { GridItemSpan(2) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = if(isDarkMode) Color.White.copy(alpha = 0.2f) else Color.Black.copy(alpha = 0.1f)) }
-                    }
-
-                    items(menuItems) { item -> MenuCard(item, itemBg, textColor, descColor) }
-
-                    item(span = { GridItemSpan(2) }) {
-                        Box(modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp), contentAlignment = Alignment.Center) {
-                            Text(text = "Copyright © 2026 BlueWave", color = descColor, fontSize = 10.sp)
+                            Box(modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp), contentAlignment = Alignment.Center) {
+                                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                    Text(text = "Copyright © 2026 BlueWave", color = descColor, fontSize = 10.sp)
+                                }
+                            }
                         }
                     }
                 }
@@ -242,12 +263,12 @@ fun HomeScreen(
 }
 
 @Composable
-fun ProHomeButton(text: String, color: Color, isDarkMode: Boolean, onClick: () -> Unit) {
-    val icon = when (text) {
-        "Plotter" -> Icons.Default.DateRange
-        "Joystick" -> Icons.Default.PlayArrow
-        "Logger" -> Icons.Default.Share
-        "Macros" -> Icons.Default.Star
+fun ProHomeButton(text: String, color: Color, isDarkMode: Boolean, isFa: Boolean, onClick: () -> Unit) {
+    val icon = when {
+        text.contains("Plotter") || text.contains("پلاتر") -> Icons.Default.DateRange
+        text.contains("Joystick") || text.contains("جوی‌استیک") -> Icons.Default.PlayArrow
+        text.contains("Logger") || text.contains("لاگر") -> Icons.Default.Share
+        text.contains("Macros") || text.contains("ماکروها") -> Icons.Default.Star
         else -> Icons.Default.Settings
     }
     val containerColor = if (isDarkMode) Color(0xFF2C2C2C) else Color(0xFFFFFFFF)
@@ -263,7 +284,7 @@ fun ProHomeButton(text: String, color: Color, isDarkMode: Boolean, onClick: () -
             Row(modifier = Modifier.fillMaxSize().padding(start = 20.dp, end = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Column(verticalArrangement = Arrangement.Center) {
                     Text(text = text, color = contentColor, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Text(text = "Pro Feature", color = contentColor.copy(alpha = 0.5f), fontSize = 10.sp)
+                    Text(text = if(isFa) "قابلیت پرو" else "Pro Feature", color = contentColor.copy(alpha = 0.5f), fontSize = 10.sp)
                 }
                 Box(modifier = Modifier.size(40.dp).clip(CircleShape).background(color.copy(alpha = 0.1f)), contentAlignment = Alignment.Center) {
                     Icon(imageVector = icon, contentDescription = null, tint = color, modifier = Modifier.size(24.dp))
@@ -274,9 +295,9 @@ fun ProHomeButton(text: String, color: Color, isDarkMode: Boolean, onClick: () -
 }
 
 @Composable
-fun StatusPill(isConnected: Boolean) {
+fun StatusPill(isConnected: Boolean, connectedText: String, disconnectedText: String) {
     val color = if (isConnected) Color.Green else Color.Red
-    val text = if (isConnected) "Connected" else "Offline"
+    val text = if (isConnected) connectedText else disconnectedText
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clip(RoundedCornerShape(20.dp)).background(color.copy(alpha = 0.2f)).border(1.dp, color, RoundedCornerShape(20.dp)).padding(horizontal = 12.dp, vertical = 6.dp)) {
         Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(color))
         Spacer(modifier = Modifier.width(8.dp))
@@ -286,8 +307,8 @@ fun StatusPill(isConnected: Boolean) {
 
 @Composable
 fun MenuCard(item: MenuItem, cardBg: Color, titleColor: Color, descColor: Color) {
-    val alpha = if (item.title == "Wait...") 0.5f else 1f
-    Column(modifier = Modifier.clip(RoundedCornerShape(15.dp)).background(cardBg.copy(alpha = alpha)).border(1.dp, item.color.copy(alpha = 0.3f), RoundedCornerShape(15.dp)).clickable(enabled = item.title != "Wait...") { item.onClick() }.padding(16.dp).height(100.dp), verticalArrangement = Arrangement.SpaceBetween) {
+    val alpha = if (item.title == "Wait..." || item.title == "صبر کنید...") 0.5f else 1f
+    Column(modifier = Modifier.clip(RoundedCornerShape(15.dp)).background(cardBg.copy(alpha = alpha)).border(1.dp, item.color.copy(alpha = 0.3f), RoundedCornerShape(15.dp)).clickable(enabled = alpha == 1f) { item.onClick() }.padding(16.dp).height(100.dp), verticalArrangement = Arrangement.SpaceBetween) {
         Box(modifier = Modifier.size(40.dp).clip(CircleShape).background(item.color.copy(alpha = 0.1f)), contentAlignment = Alignment.Center) {
             Icon(item.icon, contentDescription = null, tint = item.color)
         }

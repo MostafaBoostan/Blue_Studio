@@ -24,19 +24,91 @@ import java.text.DecimalFormat
 
 @Composable
 fun SettingsScreen(
-    viewModel: com.bluestudio.manager.MainViewModel,
+    viewModel: MainViewModel,
     onBack: () -> Unit
 ) {
     val scrollState = rememberScrollState()
 
-    // دریافت وضعیت‌ها
     val isDarkMode by viewModel.isDarkMode.collectAsState()
     val fontScale by viewModel.fontScale.collectAsState()
+    val currentLanguage by viewModel.currentLanguage.collectAsState()
+
+    var showLanguageDialog by remember { mutableStateOf(false) }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val cardColor = if (isDarkMode) Color(0xFF252525) else Color(0xFFFFFFFF)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val neonColor = Color(0xFFFF4081)
+
+    if (showLanguageDialog) {
+        AlertDialog(
+            onDismissRequest = { showLanguageDialog = false },
+            containerColor = cardColor,
+            title = {
+                Text(
+                    text = if (currentLanguage == "fa") "انتخاب زبان" else "Select Language",
+                    color = textColor,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                viewModel.setLanguage("en")
+                                showLanguageDialog = false
+                            }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = currentLanguage == "en",
+                            onClick = {
+                                viewModel.setLanguage("en")
+                                showLanguageDialog = false
+                            },
+                            colors = RadioButtonDefaults.colors(selectedColor = neonColor, unselectedColor = Color.Gray)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("English", color = textColor, fontSize = 16.sp)
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                viewModel.setLanguage("fa")
+                                showLanguageDialog = false
+                            }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = currentLanguage == "fa",
+                            onClick = {
+                                viewModel.setLanguage("fa")
+                                showLanguageDialog = false
+                            },
+                            colors = RadioButtonDefaults.colors(selectedColor = neonColor, unselectedColor = Color.Gray)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("فارسی", color = textColor, fontSize = 16.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLanguageDialog = false }) {
+                    Text(
+                        text = if (currentLanguage == "fa") "لغو" else "Cancel",
+                        color = neonColor
+                    )
+                }
+            }
+        )
+    }
 
     Scaffold(
         containerColor = bgColor,
@@ -56,7 +128,7 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "SETTINGS",
+                    text = if (currentLanguage == "fa") "تنظیمات" else "SETTINGS",
                     color = textColor,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
@@ -74,12 +146,21 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
 
-            // --- Appearance ---
-            SettingsSectionTitle("APPEARANCE", neonColor)
+            SettingsSectionTitle(if (currentLanguage == "fa") "عمومی" else "GENERAL", neonColor)
             SettingsCard(cardColor) {
-                // Dark Mode Switch
+                SettingsActionItem(
+                    title = if (currentLanguage == "fa") "زبان" else "Language",
+                    subtitle = if (currentLanguage == "fa") "فارسی" else "English",
+                    icon = Icons.Default.Language,
+                    onClick = { showLanguageDialog = true },
+                    textColor = textColor
+                )
+            }
+
+            SettingsSectionTitle(if (currentLanguage == "fa") "ظاهر" else "APPEARANCE", neonColor)
+            SettingsCard(cardColor) {
                 SettingsSwitchItem(
-                    title = "Dark Mode",
+                    title = if (currentLanguage == "fa") "حالت تاریک" else "Dark Mode",
                     icon = if (isDarkMode) Icons.Default.DarkMode else Icons.Default.LightMode,
                     checked = isDarkMode,
                     textColor = textColor,
@@ -88,7 +169,6 @@ fun SettingsScreen(
 
                 Divider(color = bgColor, thickness = 1.dp)
 
-                // Font Size Slider
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -96,7 +176,7 @@ fun SettingsScreen(
                     ) {
                         Icon(Icons.Default.FormatSize, null, tint = textColor, modifier = Modifier.size(24.dp))
                         Spacer(Modifier.width(16.dp))
-                        Text("Font Size", color = textColor, fontSize = 16.sp)
+                        Text(if (currentLanguage == "fa") "اندازه قلم" else "Font Size", color = textColor, fontSize = 16.sp)
                         Spacer(Modifier.weight(1f))
                         Text(
                             text = "${DecimalFormat("#.##").format(fontScale)}x",
@@ -108,23 +188,34 @@ fun SettingsScreen(
                     Slider(
                         value = fontScale,
                         onValueChange = { viewModel.setFontScale(it) },
-                        valueRange = 0.8f..1.4f, // محدوده تغییر سایز (از 0.8 تا 1.4 برابر)
+                        valueRange = 0.8f..1.4f,
                         steps = 5,
                         colors = SliderDefaults.colors(
                             thumbColor = neonColor,
                             activeTrackColor = neonColor,
-                            inactiveTrackColor = if(isDarkMode) Color.DarkGray else Color.LightGray
+                            inactiveTrackColor = if (isDarkMode) Color.DarkGray else Color.LightGray
                         )
                     )
                 }
             }
 
-            // --- About ---
-            SettingsSectionTitle("ABOUT", neonColor)
+            SettingsSectionTitle(if (currentLanguage == "fa") "درباره ما" else "ABOUT", neonColor)
             SettingsCard(cardColor) {
-                SettingsActionItem("Version", "v1.3", Icons.Default.Info, {}, textColor)
+                SettingsActionItem(
+                    title = if (currentLanguage == "fa") "نسخه" else "Version",
+                    subtitle = "v1.3",
+                    icon = Icons.Default.Info,
+                    onClick = {},
+                    textColor = textColor
+                )
                 Divider(color = bgColor, thickness = 1.dp)
-                SettingsActionItem("Developer Team", "BlueWave Dev Team", Icons.Default.Code, {}, textColor)
+                SettingsActionItem(
+                    title = if (currentLanguage == "fa") "تیم توسعه دهنده" else "Developer Team",
+                    subtitle = "BlueWave Dev Team",
+                    icon = Icons.Default.Code,
+                    onClick = {},
+                    textColor = textColor
+                )
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -138,7 +229,6 @@ fun SettingsScreen(
     }
 }
 
-// --- کامپوننت‌های کمکی ---
 @Composable
 fun SettingsSectionTitle(title: String, color: Color) {
     Text(

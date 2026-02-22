@@ -18,5 +18,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Micro REPL"
+rootProject.name = "Blue Studio"
 include(":app")

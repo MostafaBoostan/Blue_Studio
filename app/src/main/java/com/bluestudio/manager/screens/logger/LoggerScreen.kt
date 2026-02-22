@@ -26,9 +26,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
@@ -43,13 +45,19 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoggerScreen(
-    viewModel: com.bluestudio.manager.MainViewModel,
-    terminalManager: com.bluestudio.manager.managers.TerminalManager,
+    viewModel: MainViewModel,
+    terminalManager: TerminalManager,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val isDarkMode by viewModel.isDarkMode.collectAsState()
 
+    // دریافت وضعیت تم و زبان
+    val isDarkMode by viewModel.isDarkMode.collectAsState()
+    val currentLanguage by viewModel.currentLanguage.collectAsState()
+    val isFa = currentLanguage == "fa"
+    val layoutDirection = if (isFa) LayoutDirection.Rtl else LayoutDirection.Ltr
+
+    // رنگ‌ها
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val cardColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFFFFFFF)
     val textColor = if (isDarkMode) Color.White else Color.Black
@@ -60,11 +68,13 @@ fun LoggerScreen(
     var isRecording by remember { mutableStateOf(false) }
     var terminalInput by remember { mutableStateOf("") }
 
+    // لیست لاگ‌ها: Pair(زمان, مقدار)
     val logs = remember { mutableStateListOf<Pair<String, String>>() }
     val listState = rememberLazyListState()
 
     DisposableEffect(Unit) {
         onDispose {
+            // ارسال Ctrl+C هنگام خروج برای توقف اسکریپت
             terminalManager.sendCommand("\u0003")
         }
     }
@@ -87,6 +97,7 @@ fun LoggerScreen(
         }
     }
 
+    // اسکرول خودکار به آخرین آیتم
     LaunchedEffect(logs.size) {
         if (logs.isNotEmpty()) {
             listState.animateScrollToItem(logs.size - 1)
@@ -97,6 +108,7 @@ fun LoggerScreen(
         if (terminalInput.isNotEmpty()) {
             val cmd = terminalInput
             if (cmd.contains("\n")) {
+                // اگر چند خطی است، حالت Paste Mode
                 terminalManager.sendCommand("\u0005" + cmd + "\u0004")
             } else {
                 terminalManager.sendCommand(cmd + "\r\n")
@@ -108,7 +120,7 @@ fun LoggerScreen(
 
     fun saveAndShare() {
         if (logs.isEmpty()) {
-            Toast.makeText(context, "No data to save!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, if(isFa) "داده‌ای برای ذخیره نیست!" else "No data to save!", Toast.LENGTH_SHORT).show()
             return
         }
         try {
@@ -119,198 +131,217 @@ fun LoggerScreen(
             writer.append("Timestamp,Value\n")
 
             logs.forEach { (time, value) ->
+                // جایگزینی کاما با نقطه برای جلوگیری از بهم ریختن CSV
                 val cleanValue = value.replace(",", ".")
                 writer.append("$time,$cleanValue\n")
             }
             writer.flush()
             writer.close()
 
+            // اشتراک گذاری فایل
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/csv"
                 putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            context.startActivity(Intent.createChooser(intent, "Share CSV via"))
+            context.startActivity(Intent.createChooser(intent, if(isFa) "اشتراک‌گذاری CSV با" else "Share CSV via"))
 
         } catch (e: Exception) {
             e.printStackTrace()
-            Toast.makeText(context, "Error saving file: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Data Logger", color = textColor, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Box(modifier = Modifier.background(accentColor.copy(0.2f), RoundedCornerShape(4.dp)).padding(horizontal=4.dp)) {
-                            Text("CSV", color = accentColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        terminalManager.sendCommand("\u0003")
-                        onBack()
-                    }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = textColor)
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { logs.clear() }) {
-                        Icon(Icons.Default.Delete, "Clear", tint = textColor)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = bgColor)
-            )
-        },
-        containerColor = bgColor
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Card(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = cardColor),
-                border = BorderStroke(1.dp, borderColor)
-            ) {
-                if (logs.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("No Data Recorded", color = Color.Gray, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("Run a script below to start logging", color = Color.Gray, fontSize = 12.sp)
-                        }
-                    }
-                } else {
-                    LazyColumn(
-                        state = listState,
-                        contentPadding = PaddingValues(12.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        item {
-                            Row(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                                Text("TIME (HH:mm:ss.SSS)", modifier = Modifier.weight(0.5f), color = Color.Gray, fontSize = 10.sp)
-                                Text("VALUE", modifier = Modifier.weight(0.5f), color = Color.Gray, fontSize = 10.sp)
-                            }
-                            HorizontalDivider(color = borderColor)
-                        }
-                        items(logs) { (time, value) ->
-                            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                                Text(time, modifier = Modifier.weight(0.5f), color = Color.Gray, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                                Text(value, modifier = Modifier.weight(0.5f), color = logTextColor, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+    // اعمال جهت چیدمان (RTL/LTR)
+    CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(if(isFa) "ثبت داده (لاگر)" else "Data Logger", color = textColor, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(modifier = Modifier.background(accentColor.copy(0.2f), RoundedCornerShape(4.dp)).padding(horizontal=4.dp)) {
+                                Text("CSV", color = accentColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                         }
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Button(
-                    onClick = { isRecording = !isRecording },
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isRecording) Color(0xFFFF5252) else accentColor
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(
-                        if (isRecording) Icons.Default.Stop else Icons.Default.FiberManualRecord,
-                        contentDescription = null,
-                        tint = Color.White
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        if (isRecording) "STOP REC" else "START REC",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Button(
-                    onClick = { saveAndShare() },
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    colors = ButtonDefaults.buttonColors(containerColor = cardColor),
-                    border = BorderStroke(1.dp, accentColor),
-                    shape = RoundedCornerShape(12.dp),
-                    enabled = logs.isNotEmpty()
-                ) {
-                    Icon(Icons.Default.Share, null, tint = accentColor)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("EXPORT CSV", color = accentColor, fontWeight = FontWeight.Bold)
-                }
-            }
-
-            Row(
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = {
+                            terminalManager.sendCommand("\u0003")
+                            onBack()
+                        }) {
+                            // آیکون در RTL خودکار برعکس می‌شود
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = textColor)
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { logs.clear() }) {
+                            Icon(Icons.Default.Delete, "Clear", tint = textColor)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = bgColor)
+                )
+            },
+            containerColor = bgColor
+        ) { padding ->
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(100.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(padding)
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Box(
+                // --- کارت نمایش لاگ‌ها ---
+                Card(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxHeight()
-                        .background(cardColor, RoundedCornerShape(12.dp))
-                        .border(1.dp, borderColor, RoundedCornerShape(12.dp))
-                        .padding(12.dp)
+                        .fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardColor),
+                    border = BorderStroke(1.dp, borderColor)
                 ) {
-                    if (terminalInput.isEmpty()) {
-                        Text("Paste logging script here...", color = Color.Gray, fontSize = 12.sp)
+                    if (logs.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(if(isFa) "داده‌ای ثبت نشده" else "No Data Recorded", color = Color.Gray, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(if(isFa) "یک اسکریپت اجرا کنید تا ثبت شروع شود" else "Run a script below to start logging", color = Color.Gray, fontSize = 12.sp)
+                            }
+                        }
+                    } else {
+                        // لیست لاگ‌ها همیشه LTR باشد چون اعداد و زمان هستند
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            LazyColumn(
+                                state = listState,
+                                contentPadding = PaddingValues(12.dp),
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                item {
+                                    Row(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                                        Text("TIME (HH:mm:ss.SSS)", modifier = Modifier.weight(0.5f), color = Color.Gray, fontSize = 10.sp)
+                                        Text("VALUE", modifier = Modifier.weight(0.5f), color = Color.Gray, fontSize = 10.sp)
+                                    }
+                                    HorizontalDivider(color = borderColor)
+                                }
+                                items(logs) { (time, value) ->
+                                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                                        Text(time, modifier = Modifier.weight(0.5f), color = Color.Gray, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                                        Text(value, modifier = Modifier.weight(0.5f), color = logTextColor, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
                     }
-                    BasicTextField(
-                        value = terminalInput,
-                        onValueChange = { terminalInput = it },
-                        textStyle = TextStyle(
-                            color = textColor,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 13.sp
-                        ),
-                        cursorBrush = SolidColor(accentColor),
-                        singleLine = false,
-                        keyboardOptions = KeyboardOptions.Default,
-                        modifier = Modifier.fillMaxSize()
-                    )
                 }
 
-                Button(
-                    onClick = { sendCommand() },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = accentColor),
-                    modifier = Modifier
-                        .width(70.dp)
-                        .fillMaxHeight()
+                // --- دکمه‌های کنترل ---
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                    Button(
+                        onClick = { isRecording = !isRecording },
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isRecording) Color(0xFFFF5252) else accentColor
+                        ),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = "Run",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
+                            if (isRecording) Icons.Default.Stop else Icons.Default.FiberManualRecord,
+                            contentDescription = null,
+                            tint = Color.White
                         )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "RUN",
+                            if (isRecording) (if(isFa) "توقف ضبط" else "STOP REC") else (if(isFa) "شروع ضبط" else "START REC"),
                             color = Color.White,
-                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
                         )
+                    }
+
+                    Button(
+                        onClick = { saveAndShare() },
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        colors = ButtonDefaults.buttonColors(containerColor = cardColor),
+                        border = BorderStroke(1.dp, accentColor),
+                        shape = RoundedCornerShape(12.dp),
+                        enabled = logs.isNotEmpty()
+                    ) {
+                        Icon(Icons.Default.Share, null, tint = accentColor)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if(isFa) "خروجی CSV" else "EXPORT CSV", color = accentColor, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // --- بخش ورودی اسکریپت ---
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(100.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .background(cardColor, RoundedCornerShape(12.dp))
+                            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+                            .padding(12.dp)
+                    ) {
+                        if (terminalInput.isEmpty()) {
+                            Text(
+                                if(isFa) "دستور پایتون را اینجا بنویسید..." else "Paste logging script here...",
+                                color = Color.Gray,
+                                fontSize = 12.sp
+                            )
+                        }
+                        // ورودی متن همیشه LTR باشد چون کد پایتون است
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            BasicTextField(
+                                value = terminalInput,
+                                onValueChange = { terminalInput = it },
+                                textStyle = TextStyle(
+                                    color = textColor,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 13.sp
+                                ),
+                                cursorBrush = SolidColor(accentColor),
+                                singleLine = false,
+                                keyboardOptions = KeyboardOptions.Default,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = { sendCommand() },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = accentColor),
+                        modifier = Modifier
+                            .width(70.dp)
+                            .fillMaxHeight()
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Run",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                if(isFa) "اجرا" else "RUN",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }

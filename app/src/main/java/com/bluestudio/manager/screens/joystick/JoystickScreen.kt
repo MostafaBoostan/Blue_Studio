@@ -27,8 +27,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bluestudio.manager.MainViewModel
@@ -86,11 +88,15 @@ enum class ControlMode { SELECTION, TANK, JOYSTICK }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun JoystickScreen(
-    viewModel: com.bluestudio.manager.MainViewModel,
-    terminalManager: com.bluestudio.manager.managers.TerminalManager,
+    viewModel: MainViewModel,
+    terminalManager: TerminalManager,
     onBack: () -> Unit
 ) {
     val isDarkMode by viewModel.isDarkMode.collectAsState()
+    val currentLanguage by viewModel.currentLanguage.collectAsState()
+
+    val isFa = currentLanguage == "fa"
+    val layoutDirection = if (isFa) LayoutDirection.Rtl else LayoutDirection.Ltr
 
     val bgBrush = if (isDarkMode) {
         Brush.verticalGradient(listOf(Color(0xFF121212), Color(0xFF0A0A0A)))
@@ -116,82 +122,92 @@ fun JoystickScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        when(currentMode) {
-                            ControlMode.SELECTION -> "CONTROLLER MODE"
-                            ControlMode.TANK -> "TANK MODE"
-                            ControlMode.JOYSTICK -> "JOYSTICK MODE"
-                        },
-                        color = textColor, fontWeight = FontWeight.Black, letterSpacing = 1.sp, fontSize = 16.sp
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        if (currentMode != ControlMode.SELECTION) {
-                            currentMode = ControlMode.SELECTION
-                            terminalManager.sendCommand("m1.stop();m2.stop();m3.stop();m4.stop()\r\n")
-                        } else {
-                            onBack()
+    // اعمال جهت چیدمان راست‌چین یا چپ‌چین
+    CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text(
+                            when(currentMode) {
+                                ControlMode.SELECTION -> if (isFa) "حالت کنترل" else "CONTROLLER MODE"
+                                ControlMode.TANK -> if (isFa) "حالت تانک" else "TANK MODE"
+                                ControlMode.JOYSTICK -> if (isFa) "حالت جوی‌استیک" else "JOYSTICK MODE"
+                            },
+                            color = textColor, fontWeight = FontWeight.Black, letterSpacing = 1.sp, fontSize = 16.sp
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = {
+                            if (currentMode != ControlMode.SELECTION) {
+                                currentMode = ControlMode.SELECTION
+                                terminalManager.sendCommand("m1.stop();m2.stop();m3.stop();m4.stop()\r\n")
+                            } else {
+                                onBack()
+                            }
+                        }) {
+                            // آیکون فلش در حالت RTL خودکار برعکس می‌شود
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = textColor)
                         }
-                    }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = textColor)
-                    }
-                },
-                actions = {
-                    IconButton(onClick = {
-                        terminalManager.sendCommand("\u0005" + MOTOR_LIB + "\u0004")
-                    }) {
-                        Icon(Icons.Default.Refresh, "Init", tint = textColor)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Colors.Transparent)
-            )
-        },
-        containerColor = Colors.Transparent
-    ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(bgBrush)
-                .padding(padding)
-        ) {
-            when (currentMode) {
-                ControlMode.SELECTION -> {
-                    Row(
-                        modifier = Modifier.fillMaxSize().padding(24.dp),
-                        horizontalArrangement = Arrangement.spacedBy(24.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        ModeSelectionCard(
-                            title = "TANK MODE",
-                            icon = Icons.Default.ViewWeek,
-                            color = CustomBlue,
-                            textColor = textColor,
-                            bgColor = cardColor,
-                            modifier = Modifier.weight(1f)
-                        ) { currentMode = ControlMode.TANK }
+                    },
+                    actions = {
+                        IconButton(onClick = {
+                            terminalManager.sendCommand("\u0005" + MOTOR_LIB + "\u0004")
+                        }) {
+                            Icon(Icons.Default.Refresh, "Init", tint = textColor)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Colors.Transparent)
+                )
+            },
+            containerColor = Colors.Transparent
+        ) { padding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(bgBrush)
+                    .padding(padding)
+            ) {
+                when (currentMode) {
+                    ControlMode.SELECTION -> {
+                        Row(
+                            modifier = Modifier.fillMaxSize().padding(24.dp),
+                            horizontalArrangement = Arrangement.spacedBy(24.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            ModeSelectionCard(
+                                title = if (isFa) "حالت تانک" else "TANK MODE",
+                                icon = Icons.Default.ViewWeek,
+                                color = CustomBlue,
+                                textColor = textColor,
+                                bgColor = cardColor,
+                                modifier = Modifier.weight(1f)
+                            ) { currentMode = ControlMode.TANK }
 
-                        ModeSelectionCard(
-                            title = "JOYSTICK MODE",
-                            icon = Icons.Default.Gamepad,
-                            color = CustomOrange,
-                            textColor = textColor,
-                            bgColor = cardColor,
-                            modifier = Modifier.weight(1f)
-                        ) { currentMode = ControlMode.JOYSTICK }
+                            ModeSelectionCard(
+                                title = if (isFa) "حالت جوی‌استیک" else "JOYSTICK MODE",
+                                icon = Icons.Default.Gamepad,
+                                color = CustomOrange,
+                                textColor = textColor,
+                                bgColor = cardColor,
+                                modifier = Modifier.weight(1f)
+                            ) { currentMode = ControlMode.JOYSTICK }
+                        }
                     }
-                }
 
-                ControlMode.TANK -> {
-                    TankControlView(terminalManager, cardColor, textColor, isDarkMode)
-                }
+                    ControlMode.TANK -> {
+                        // برای کنترلرها همیشه چپ‌چین (LTR) بهتر است تا جای چپ و راست عوض نشود
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            TankControlView(terminalManager, cardColor, textColor, isDarkMode, isFa)
+                        }
+                    }
 
-                ControlMode.JOYSTICK -> {
-                    SingleJoystickView(terminalManager, cardColor, textColor, isDarkMode)
+                    ControlMode.JOYSTICK -> {
+                        // جوی‌استیک هم نیاز به LTR دارد تا مختصات قاطی نشود
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            SingleJoystickView(terminalManager, cardColor, textColor, isDarkMode)
+                        }
+                    }
                 }
             }
         }
@@ -244,12 +260,16 @@ fun ModeSelectionCard(
 // ==========================================
 @Composable
 fun TankControlView(
-    terminalManager: com.bluestudio.manager.managers.TerminalManager,
+    terminalManager: TerminalManager,
     trackBgColor: Color,
     textColor: Color,
-    isDarkMode: Boolean
+    isDarkMode: Boolean,
+    isFa: Boolean
 ) {
     val borderColor = if (isDarkMode) Color.Transparent else Color(0xFFBDBDBD)
+
+    val leftLabel = if (isFa) "ترک چپ (M3+M4)" else "LEFT TRACK (M3+M4)"
+    val rightLabel = if (isFa) "ترک راست (M1+M2)" else "RIGHT TRACK (M1+M2)"
 
     Row(
         modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -257,7 +277,7 @@ fun TankControlView(
         verticalAlignment = Alignment.CenterVertically
     ) {
         GraphicThrottle(
-            label = "LEFT TRACK (M3+M4)",
+            label = leftLabel,
             primaryColor = CustomBlue,
             trackBgColor = trackBgColor,
             borderColor = borderColor,
@@ -273,7 +293,7 @@ fun TankControlView(
         )
 
         GraphicThrottle(
-            label = "RIGHT TRACK (M1+M2)",
+            label = rightLabel,
             primaryColor = CustomOrange,
             trackBgColor = trackBgColor,
             borderColor = borderColor,
@@ -306,7 +326,7 @@ fun GraphicThrottle(
     val trackHeight = 300.dp
     val trackWidth = 90.dp
     val thumbSize = 80.dp
-    val maxDrag = 360f
+    val maxDrag = 360f // مقدار تقریبی حداکثر درگ (بسته به ارتفاع ترک)
 
     val currentSpeed = ((-dragOffsetY / maxDrag) * 100).toInt().coerceIn(-100, 100)
 
@@ -338,8 +358,9 @@ fun GraphicThrottle(
                         onDrag = { change, dragAmount ->
                             change.consume()
                             val newY = dragOffsetY + dragAmount.y
-                            dragOffsetY = newY.coerceIn(-maxDrag, maxDrag)
-                            val speed = ((-dragOffsetY / maxDrag) * 100).toInt().coerceIn(-100, 100)
+                            // محدود کردن حرکت به ارتفاع ترک (تقریبی)
+                            dragOffsetY = newY.coerceIn(-130f, 130f) // اصلاح شده برای جلوگیری از بیرون زدن
+                            val speed = ((-dragOffsetY / 130f) * 100).toInt().coerceIn(-100, 100)
                             if (abs(speed - lastSpeed) > 5 || speed == 0) {
                                 onSpeedChange(speed)
                                 lastSpeed = speed
@@ -352,7 +373,8 @@ fun GraphicThrottle(
             Box(
                 modifier = Modifier
                     .offset { IntOffset(0, dragOffsetY.roundToInt()) }
-                    .size(thumbSize).align(Alignment.Center)
+                    .align(Alignment.Center) // وسط‌چین کردن دکمه در شروع
+                    .size(thumbSize)
                     .shadow(20.dp, CircleShape, spotColor = primaryColor).clip(CircleShape)
                     .background(Brush.radialGradient(colors = listOf(primaryColor.copy(alpha = 0.8f), primaryColor), center = androidx.compose.ui.geometry.Offset.Unspecified, radius = thumbSize.value * 1.5f))
                     .border(2.dp, Color.White, CircleShape)
@@ -370,7 +392,7 @@ fun GraphicThrottle(
 // ==========================================
 @Composable
 fun SingleJoystickView(
-    terminalManager: com.bluestudio.manager.managers.TerminalManager,
+    terminalManager: TerminalManager,
     baseColor: Color, // رنگ پس‌زمینه کارت
     textColor: Color,
     isDarkMode: Boolean
@@ -433,10 +455,8 @@ fun SingleJoystickView(
 
                             val newPos = knobPosition + dragAmount
                             val distance = sqrt(newPos.x * newPos.x + newPos.y * newPos.y)
-                            val radiusPx = size.width.toFloat() // شعاع حدودی حرکت در پیکسل (چون Box سایز Knob است، width برابر شعاع knob است، کمی تقریبی)
-
-                            // اصلاح شعاع واقعی حرکت (حدود 80% شعاع کل)
-                            val maxMoveRadius = 300f
+                            // شعاع مجاز حرکت
+                            val maxMoveRadius = 150f // اصلاح شده متناسب با سایز جوی‌استیک
 
                             knobPosition = if (distance > maxMoveRadius) {
                                 val angle = atan2(newPos.y, newPos.x)
