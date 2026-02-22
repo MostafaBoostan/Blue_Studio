@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
@@ -146,7 +147,6 @@ fun JoystickScreen(
                                 onBack()
                             }
                         }) {
-                            // آیکون فلش در حالت RTL خودکار برعکس می‌شود
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = textColor)
                         }
                     },
@@ -196,14 +196,12 @@ fun JoystickScreen(
                     }
 
                     ControlMode.TANK -> {
-                        // برای کنترلرها همیشه چپ‌چین (LTR) بهتر است تا جای چپ و راست عوض نشود
                         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                             TankControlView(terminalManager, cardColor, textColor, isDarkMode, isFa)
                         }
                     }
 
                     ControlMode.JOYSTICK -> {
-                        // جوی‌استیک هم نیاز به LTR دارد تا مختصات قاطی نشود
                         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                             SingleJoystickView(terminalManager, cardColor, textColor, isDarkMode)
                         }
@@ -323,12 +321,21 @@ fun GraphicThrottle(
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
     var lastSpeed by remember { mutableIntStateOf(0) }
 
+    // سایزها
     val trackHeight = 300.dp
     val trackWidth = 90.dp
     val thumbSize = 80.dp
-    val maxDrag = 360f // مقدار تقریبی حداکثر درگ (بسته به ارتفاع ترک)
 
-    val currentSpeed = ((-dragOffsetY / maxDrag) * 100).toInt().coerceIn(-100, 100)
+    // تبدیل dp به پیکسل برای محاسبه دقیق بازه حرکت
+    val density = LocalDensity.current
+    val trackHeightPx = with(density) { trackHeight.toPx() }
+    val thumbSizePx = with(density) { thumbSize.toPx() }
+
+    // محاسبه دقیق حداکثر حرکت (نصف ارتفاع مسیر منهای نصف دکمه)
+    // اینطوری دکمه دقیقا تا لبه‌ها میره
+    val maxDragPx = (trackHeightPx - thumbSizePx) / 2
+
+    val currentSpeed = ((-dragOffsetY / maxDragPx) * 100).toInt().coerceIn(-100, 100)
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
@@ -347,7 +354,7 @@ fun GraphicThrottle(
                 .shadow(elevation = 10.dp, shape = RoundedCornerShape(50.dp), spotColor = primaryColor)
                 .clip(RoundedCornerShape(50.dp)).background(trackBgColor)
                 .border(width = 3.dp, brush = Brush.verticalGradient(listOf(primaryColor.copy(alpha = 0.5f), primaryColor, primaryColor.copy(alpha = 0.5f))), shape = RoundedCornerShape(50.dp))
-                .pointerInput(Unit) {
+                .pointerInput(maxDragPx) {
                     detectDragGestures(
                         onDragStart = { view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY) },
                         onDragEnd = {
@@ -358,9 +365,10 @@ fun GraphicThrottle(
                         onDrag = { change, dragAmount ->
                             change.consume()
                             val newY = dragOffsetY + dragAmount.y
-                            // محدود کردن حرکت به ارتفاع ترک (تقریبی)
-                            dragOffsetY = newY.coerceIn(-130f, 130f) // اصلاح شده برای جلوگیری از بیرون زدن
-                            val speed = ((-dragOffsetY / 130f) * 100).toInt().coerceIn(-100, 100)
+                            // محدود کردن حرکت دقیقاً به اندازه محاسبه شده
+                            dragOffsetY = newY.coerceIn(-maxDragPx, maxDragPx)
+
+                            val speed = ((-dragOffsetY / maxDragPx) * 100).toInt().coerceIn(-100, 100)
                             if (abs(speed - lastSpeed) > 5 || speed == 0) {
                                 onSpeedChange(speed)
                                 lastSpeed = speed
@@ -373,7 +381,7 @@ fun GraphicThrottle(
             Box(
                 modifier = Modifier
                     .offset { IntOffset(0, dragOffsetY.roundToInt()) }
-                    .align(Alignment.Center) // وسط‌چین کردن دکمه در شروع
+                    .align(Alignment.Center)
                     .size(thumbSize)
                     .shadow(20.dp, CircleShape, spotColor = primaryColor).clip(CircleShape)
                     .background(Brush.radialGradient(colors = listOf(primaryColor.copy(alpha = 0.8f), primaryColor), center = androidx.compose.ui.geometry.Offset.Unspecified, radius = thumbSize.value * 1.5f))
@@ -393,29 +401,35 @@ fun GraphicThrottle(
 @Composable
 fun SingleJoystickView(
     terminalManager: TerminalManager,
-    baseColor: Color, // رنگ پس‌زمینه کارت
+    baseColor: Color,
     textColor: Color,
     isDarkMode: Boolean
 ) {
     val view = LocalView.current
     var knobPosition by remember { mutableStateOf(Offset.Zero) }
 
-    // وضعیت آخرین سرعت‌ها
     var lastLeftSpeed by remember { mutableIntStateOf(0) }
     var lastRightSpeed by remember { mutableIntStateOf(0) }
 
     val joystickRadius = 130.dp
     val knobRadius = 50.dp
 
-    // *** تغییر رنگ: خاکستری روشن برای دکمه ***
-    val knobColorLight = Color(0xFFF5F5F5) // سفید مایل به خاکستری
-    val knobColorDark = Color(0xFFBDBDBD)  // خاکستری
+    // محاسبه پیکسل‌ها
+    val density = LocalDensity.current
+    val joystickRadiusPx = with(density) { joystickRadius.toPx() }
+    val knobRadiusPx = with(density) { knobRadius.toPx() }
+
+    // شعاع مجاز حرکت: دقیقاً فاصله مرکز تا لبه داخلی، منهای شعاع خود دکمه
+    val maxMoveRadius = joystickRadiusPx - knobRadiusPx
+
+    val knobColorLight = Color(0xFFF5F5F5)
+    val knobColorDark = Color(0xFFBDBDBD)
 
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        // پس‌زمینه دایره‌ای (بدنه اصلی جوی‌استیک)
+        // بدنه اصلی جوی‌استیک
         Box(
             modifier = Modifier
                 .size(joystickRadius * 2)
@@ -425,7 +439,7 @@ fun SingleJoystickView(
                 .border(4.dp, Brush.sweepGradient(listOf(CustomBlue, CustomOrange, CustomBlue)), CircleShape)
         )
 
-        // دکمه متحرک (Knob) - رنگ جدید خاکستری
+        // دکمه متحرک (Knob)
         Box(
             modifier = Modifier
                 .offset { IntOffset(knobPosition.x.roundToInt(), knobPosition.y.roundToInt()) }
@@ -440,7 +454,7 @@ fun SingleJoystickView(
                     )
                 )
                 .border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape)
-                .pointerInput(Unit) {
+                .pointerInput(maxMoveRadius) {
                     detectDragGestures(
                         onDragStart = { view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY) },
                         onDragEnd = {
@@ -455,8 +469,6 @@ fun SingleJoystickView(
 
                             val newPos = knobPosition + dragAmount
                             val distance = sqrt(newPos.x * newPos.x + newPos.y * newPos.y)
-                            // شعاع مجاز حرکت
-                            val maxMoveRadius = 150f // اصلاح شده متناسب با سایز جوی‌استیک
 
                             knobPosition = if (distance > maxMoveRadius) {
                                 val angle = atan2(newPos.y, newPos.x)
@@ -465,11 +477,10 @@ fun SingleJoystickView(
                                 newPos
                             }
 
-                            // محاسبه درصد (-100 تا 100)
+                            // محاسبه درصد دقیق (-100 تا 100) بر اساس شعاع مجاز
                             val y = -(knobPosition.y / maxMoveRadius * 100).coerceIn(-100f, 100f)
                             val x = (knobPosition.x / maxMoveRadius * 100).coerceIn(-100f, 100f)
 
-                            // Differential Drive Mixing
                             var leftMotor = y + x
                             var rightMotor = y - x
 
@@ -482,12 +493,10 @@ fun SingleJoystickView(
                             if (abs(lSpeed - lastLeftSpeed) > 5 || abs(rSpeed - lastRightSpeed) > 5) {
                                 val cmdBuilder = StringBuilder()
 
-                                // Left (M3+M4)
                                 if (lSpeed > 0) cmdBuilder.append("m3.forward($lSpeed);m4.forward($lSpeed);")
                                 else if (lSpeed < 0) cmdBuilder.append("m3.backward(${-lSpeed});m4.backward(${-lSpeed});")
                                 else cmdBuilder.append("m3.stop();m4.stop();")
 
-                                // Right (M1+M2)
                                 if (rSpeed > 0) cmdBuilder.append("m1.forward($rSpeed);m2.forward($rSpeed)")
                                 else if (rSpeed < 0) cmdBuilder.append("m1.backward(${-rSpeed});m2.backward(${-rSpeed})")
                                 else cmdBuilder.append("m1.stop();m2.stop()")
